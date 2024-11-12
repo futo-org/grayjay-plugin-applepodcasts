@@ -1,0 +1,23 @@
+{
+    "name": "Apple Podcasts",
+    "description": "One of the biggest podcast indexes owned by Apple",
+    "author": "FUTO",
+    "authorUrl": "https://futo.org",
+    "sourceUrl": "https://plugintest.grayjay.app/ApplePodcasts/ApplePodcastsConfig.json",
+    "repositoryUrl": "https://futo.org",
+    "scriptUrl": "./ApplePodcastsScript.js",
+    "version": 2,
+    "iconUrl": "./podcast.png",
+    "id": "89ae4889-0420-4d16-ad6c-19c776b28f99",
+    "scriptSignature": "",
+    "scriptPublicKey": "",
+    "packages": [
+        "Http"
+    ],
+    "allowEval": false,
+    "allowUrls": [
+        "itunes.apple.com",
+        "podcasts.apple.com",
+        "amp-api.podcasts.apple.com"
+    ]
+}

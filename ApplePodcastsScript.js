@@ -198,18 +198,19 @@ class AppleChannelContentPager extends ContentPager {
 	}
 
 	nextPage() {
+		this.offset += 10;
 		this.results = fetchEpisodesPage(this.id, this.offset);
 		this.hasMore = this.results.length > 0;
 		return this;
 	}
 }
-function fetchEpisodesPage(id, offset) {
+function fetchEpisodesPage(id, offset=0) {
 	const urlEpisodes = API_GET_PODCAST_EPISODES_URL_TEMPLATE
 	.replace("{0}", id)
-	.replace("{1}", offset ?? 0);
+	.replace("{1}", offset);
 	const resp = http.GET(urlEpisodes, state.headers);
 	if(!resp.isOk)
-		throw new ScriptException("Failed to get channel episodes [" + resp.code + "]");
+		return [];
 
 	const channelUrl = `${URL_CHANNEL}id${id}`;
 	

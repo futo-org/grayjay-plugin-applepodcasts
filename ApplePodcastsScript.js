@@ -231,17 +231,7 @@ function fetchEpisodesPage(id, offset) {
 		url: x.attributes.url,
 		isLive: false,
 		description: x.attributes.description.standard,
-		video: new UnMuxVideoSourceDescriptor([], [
-			new AudioUrlSource({
-				name: "Podcast",
-				container: "audio/mpeg",
-				bitrate: 0,
-				url: x.attributes.assetUrl,
-				duration: parseInt(x.attributes.durationInMilliseconds / 1000),
-				codec: "",
-				language: Language.UNKNOWN,
-			})
-		])
+		video: getVideoSource(x)
 	})});
 }
 
@@ -281,23 +271,64 @@ source.getContentDetails = function(url) {
 		url: episodeData.attributes.url,
 		isLive: false,
 		description: episodeData.attributes.description.standard,
-		video: new UnMuxVideoSourceDescriptor([], [
-			new AudioUrlSource({
-				name: "Podcast",
-				container: "audio/mpeg",
-				bitrate: 0,
-				url: episodeData.attributes.assetUrl,
-				duration: parseInt(episodeData.attributes.durationInMilliseconds / 1000),
-				codec: "",
-				language: Language.UNKNOWN,
-			})
-		])
+		video: getVideoSource(episodeData)
 	});
 };
 
 source.saveState = () => {
 	return JSON.stringify(state);
 };
+
+/**
+ * Generates a video or audio source descriptor based on the provided episode data.
+ * 
+ * @param {Object} episodeData - The data object containing episode attributes.
+ * @param {Object} episodeData.attributes - The attributes of the episode.
+ * @param {string} episodeData.attributes.mediaKind - Type of media, either "audio" or "video".
+ * @param {string} episodeData.attributes.assetUrl - The URL of the media asset.
+ * @param {number} episodeData.attributes.durationInMilliseconds - The duration of the audio in milliseconds.
+ * 
+ * @returns {(UnMuxVideoSourceDescriptor|VideoSourceDescriptor)} - A descriptor for audio or video sources.
+ * 
+ * @throws {ScriptException} Throws an error if the media kind is not supported.
+ * 
+ * @example
+ * const episodeData = {
+ *   attributes: {
+ *     mediaKind: "audio",
+ *     assetUrl: "https://example.com/audio.mp3",
+ *     durationInMilliseconds: 300000
+ *   }
+ * };
+ * const source = getVideoSource(episodeData);
+ * // Returns an UnMuxVideoSourceDescriptor for audio or a VideoSourceDescriptor for video
+ */
+function getVideoSource(episodeData) {
+	switch(episodeData.attributes.mediaKind) {
+		case "audio":
+			return new UnMuxVideoSourceDescriptor([], [
+				new AudioUrlSource({
+					name: "Podcast",
+					container: "audio/mpeg",
+					bitrate: 0,
+					url: episodeData.attributes.assetUrl,
+					duration: parseInt(episodeData.attributes.durationInMilliseconds / 1000),
+					codec: "",
+				})
+			]);
+		case "video":
+			return new VideoSourceDescriptor([
+				new VideoUrlSource({
+					name: "Podcast",
+					container: "video/mp4",
+					url: episodeData.attributes.assetUrl,
+				})
+			]);
+		default:
+			throw new ScriptException(`Unsupported media kind: "${episodeData.attributes.mediaKind}" for url: ${episodeData.attributes.assetUrl}`);
+	}	
+}
+
 
 /**
  * Prepare the artwork URL by replacing the placeholders with the actual values

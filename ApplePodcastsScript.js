@@ -7,6 +7,7 @@ const API_SEARCH_URL_TEMPLATE = 'https://amp-api.podcasts.apple.com/v1/catalog/u
 const API_SEARCH_PODCASTS_URL_TEMPLATE = 'https://itunes.apple.com/search?media=podcast&term={0}';
 const API_GET_PODCAST_EPISODES_URL_TEMPLATE = 'https://amp-api.podcasts.apple.com/v1/catalog/us/podcasts/{0}/episodes?l=en-US&offset={1}';
 const API_GET_EPISODE_DETAILS_URL_TEMPLATE = 'https://amp-api.podcasts.apple.com/v1/catalog/us/podcast-episodes/{0}?include=channel,podcast&include[podcasts]=episodes,podcast-seasons,trailers&include[podcast-seasons]=episodes&fields=artistName,artwork,assetUrl,contentRating,description,durationInMilliseconds,episodeNumber,guid,isExplicit,kind,mediaKind,name,offers,releaseDateTime,season,seasonNumber,storeUrl,summary,title,url&with=entitlements&l=en-US';
+const API_GET_TRENDING_EPISODES = 'https://amp-api.podcasts.apple.com/v1/catalog/us/charts?extend[podcasts]=editorialArtwork,feedUrl&include[podcast-episodes]=podcast&limit=50&types=podcast-episodes&chart=top&genre=26&with=entitlements&l=en-US';
 
 const REGEX_CONTENT_URL = /https:\/\/podcasts\.apple\.com\/[a-zA-Z]*\/podcast\/.*?\/id([0-9]*)\?i=([0-9]*).*?/s
 const REGEX_CHANNEL_URL = /https:\/\/podcasts\.apple\.com\/[a-zA-Z]{2}\/podcast(?:\/[^/]+)?\/(?:id)?([0-9]+)/si;
@@ -84,7 +85,33 @@ source.enable = function(conf, settings, savedState){
 }
 
 source.getHome = function() {
-	return new ContentPager([], false);
+
+	const resp = http.GET(API_GET_TRENDING_EPISODES, state.headers);
+
+	if(!resp.isOk)
+		return new ContentPager([], false);
+
+	const result = JSON.parse(resp.body)?.results?.['podcast-episodes']?.find(x=>x.chart == "top")?.data ?? [];
+
+	const contents = result
+	.map(x=>{
+		const podcast = x.relationships?.podcast?.data?.find(p => p.type == 'podcasts');
+		const podcastAttributes = podcast?.attributes;
+		return new PlatformVideo({
+			id: new PlatformID(PLATFORM, x.id + "", config?.id),
+			name: podcastAttributes?.name ?? '',
+			thumbnails: new Thumbnails([new Thumbnail(getArtworkUrl(x.attributes.artwork.url), 0)]),
+			author: new PlatformAuthorLink(new PlatformID(PLATFORM, podcast.id, config.id, undefined), podcastAttributes.artistName, podcastAttributes.url, getArtworkUrl(podcastAttributes.artwork.url) ?? ""),
+			uploadDate: parseInt(new Date(x.attributes.releaseDateTime).getTime() / 1000),
+			duration: x.attributes.durationInMilliseconds / 1000,
+			viewCount: -1,
+			url: x.attributes.url,
+			isLive: false
+		})})
+	.sort((a, b) => b.datetime - a.datetime);
+	
+	return new ContentPager(contents, false);
+	
 };
 
 source.searchSuggestions = function(query) {

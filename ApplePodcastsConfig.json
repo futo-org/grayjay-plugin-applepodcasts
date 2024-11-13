@@ -7,7 +7,7 @@
     "sourceUrl": "https://plugins.grayjay.app/ApplePodcasts/ApplePodcastsConfig.json",
     "repositoryUrl": "https://futo.org",
     "scriptUrl": "./ApplePodcastsScript.js",
-    "version": 2,
+    "version": 3,
     "iconUrl": "./ApplePodcastsIcon.png",
     "id": "89ae4889-0420-4d16-ad6c-19c776b28f99",
     "scriptSignature": "",

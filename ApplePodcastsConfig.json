@@ -1,7 +1,8 @@
 {
     "name": "Apple Podcasts",
+    "platformUrl": "https://podcasts.apple.com/",
     "description": "One of the biggest podcast indexes owned by Apple",
-    "author": "FUTO",
+    "author": "Futo",
     "authorUrl": "https://futo.org",
     "sourceUrl": "https://plugintest.grayjay.app/ApplePodcasts/ApplePodcastsConfig.json",
     "repositoryUrl": "https://futo.org",

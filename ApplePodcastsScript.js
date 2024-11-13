@@ -1,23 +1,88 @@
 const PLATFORM = "Apple Podcasts";
+const PLATFORM_BASE_URL = "https://podcasts.apple.com";
+const PLATFORM_BASE_ASSETS_URL = "https://podcasts.apple.com/assets/";
+const URL_CHANNEL = "https://podcasts.apple.com/us/podcast/";
+
+const API_SEARCH_URL_TEMPLATE = 'https://amp-api.podcasts.apple.com/v1/catalog/us/search/groups?groups=episode&l=en-US&offset=25&term={0}&types=podcast-episodes&platform=web&extend[podcast-channels]=availableShowCount&include[podcast-episodes]=channel,podcast&limit=25&with=entitlements';
+const API_SEARCH_PODCASTS_URL_TEMPLATE = 'https://itunes.apple.com/search?media=podcast&term={0}';
+const API_GET_PODCAST_EPISODES_URL_TEMPLATE = 'https://amp-api.podcasts.apple.com/v1/catalog/us/podcasts/{0}/episodes?l=en-US&offset={1}';
+const API_GET_EPISODE_DETAILS_URL_TEMPLATE = 'https://amp-api.podcasts.apple.com/v1/catalog/us/podcast-episodes/{0}?include=channel,podcast&include[podcasts]=episodes,podcast-seasons,trailers&include[podcast-seasons]=episodes&fields=artistName,artwork,assetUrl,contentRating,description,durationInMilliseconds,episodeNumber,guid,isExplicit,kind,mediaKind,name,offers,releaseDateTime,season,seasonNumber,storeUrl,summary,title,url&with=entitlements&l=en-US';
 
 const REGEX_CONTENT_URL = /https:\/\/podcasts\.apple\.com\/[a-zA-Z]*\/podcast\/.*?\/id([0-9]*)\?i=([0-9]*).*?/s
-const REGEX_CHANNEL_URL = /https:\/\/podcasts\.apple\.com\/[a-zA-Z]*\/podcast\/.*?\/id([0-9]*)/s
+const REGEX_CHANNEL_URL = /https:\/\/podcasts\.apple\.com\/[a-zA-Z]{2}\/podcast(?:\/[^/]+)?\/(?:id)?([0-9]+)/si;
 const REGEX_CHANNEL_SHOW = /<script id=schema:show type="application\/ld\+json">(.*?)<\/script>/s
 const REGEX_CHANNEL_TOKENS = /<meta name="web-experience-app\/config\/environment" content="(.*?)"/s
 const REGEX_EPISODE = /<script name="schema:podcast-episode" type="application\/ld\+json">(.*?)<\/script>/s
 const REGEX_IMAGE = /<meta property="og:image" content="(.*?)">/s
-const REGEX_WEPICTURE = /class="we-artwork.*?".*?>.*?<source srcset="(.*?) .*?>/s
 const REGEX_CANONICAL_URL = /<link rel="canonical" href="(https:\/\/podcasts.apple.com\/[a-zA-Z]*\/podcast\/.*?)">/s
 const REGEX_SHOEBOX_PODCAST = /<script type="fastboot\/shoebox" id="shoebox-media-api-cache-amp-podcasts">(.*?)<\/script>/s
+const REGEX_MAIN_SCRIPT_FILENAME = /index-\w+\.js/;
+const REGEX_JWT = /\beyJhbGci[A-Za-z0-9-_]+?\.[A-Za-z0-9-_]+?\.[A-Za-z0-9-_]{43,}\b/;
+const REGEX_EPISODE_ID = /[?&]i=([^&]+)/;
 
-const URL_CHANNEL = "https://podcasts.apple.com/us/podcast/the-joe-rogan-experience/id";
+let state = {
+	headers: {},
+	channel: {}
+};
 
-var config = {};
+let config = {};
 
 //Source Methods
 source.enable = function(conf, settings, savedState){
-	config = conf ?? {};
+	try {
+		config = conf ?? {};
+
+		let didSaveState = false;
+	  
+		try {
+		  if (savedState) {
+			const saveState = JSON.parse(savedState);
+			if (saveState) {
+			  Object.keys(state).forEach((key) => {
+				state[key] = saveState[key];
+			  });
+			}
+			didSaveState = true;
+		  }
+		} catch (ex) {
+		  log('Failed to parse saveState:' + ex);
+		}
+	  
+		if (!didSaveState) {
+		  // init state
+		  const indexRes = http.GET(PLATFORM_BASE_URL, {});
+		  if(!indexRes.isOk) {
+			  throw new ScriptException("Failed to get index page [" + indexRes.code + "]");
+		  }
+	
+		  // Extract the main script file name from the index page
+		  const scriptFileName = extractScriptFileName(indexRes.body);
+
+		  if(!scriptFileName) {
+			  throw new ScriptException("Failed to extract script file name");
+		  }
+		  
+		  // Get the main script file content
+		  const scriptRes = http.GET(`${PLATFORM_BASE_ASSETS_URL}${scriptFileName}`, {});
+		  if(!scriptRes.isOk) {
+			  throw new ScriptException(`Failed to get script file ${scriptFileName} [" ${scriptRes.code } "]`);
+		  }
+	  
+		  // Extract the JWT token from the main script content
+		  const token = extractJWT(scriptRes.body);
+	
+		  if(!token) {
+			  throw new ScriptException("Failed to extract Token");
+		  }
+	
+		  state.headers = { Authorization: `Bearer ${token}`, Origin: PLATFORM_BASE_URL};
+		  
+		}
+	} catch(e) {
+		console.error(e);
+	}
 }
+
 source.getHome = function() {
 	return new ContentPager([], false);
 };
@@ -33,23 +98,31 @@ source.getSearchCapabilities = () => {
 	};
 };
 source.search = function (query, type, order, filters) {
-	return new ContentPager([], false);
-	const url = `https://itunes.apple.com/search?media=podcast&term=${query}`
-	const resp = http.GET(url, {});
+	const url = API_SEARCH_URL_TEMPLATE.replace("{0}", query);
+	const resp = http.GET(url, state.headers);
+	
 	if(!resp.isOk)
 		throw new ScriptException("Failed to get search results [" + resp.code + "]");
 	const result = JSON.parse(resp.body);
-	const results = result.results.map(x=>(new PlatformVideo({
-		id: new PlatformID(PLATFORM, x.trackid + "", config?.id),
-		name: x.trackName,
-		thumbnails: new Thumbnails(new Thumbnail(x.artworkUrl100, 0)),
-		author: new PlatformAuthorLink(new PlatformID(PLATFORM, x.artistId, config.id, undefined), x.artistName, x.collectionViewUrl, x.artworkUrl100 ?? ""),
-		uploadDate: parseInt(new Date(x.releaseDate).getTime() / 1000),
-		duration: x.trackTimeMillis,
+	
+	const results = result.results.groups
+	.find(x=>x.groupId == "episode")?.data
+	.map(x=>{
+		
+	const podcast = x.relationships?.podcast?.data?.find(p => p.type == 'podcasts');
+	const podcastAttributes = podcast?.attributes;
+
+	return new PlatformVideo({
+		id: new PlatformID(PLATFORM, x.id + "", config?.id),
+		name: podcastAttributes?.name ?? '',
+		thumbnails: new Thumbnails([new Thumbnail(getArtworkUrl(x.attributes.artwork.url), 0)]),
+		author: new PlatformAuthorLink(new PlatformID(PLATFORM, podcast.id, config.id, undefined), podcastAttributes.artistName, podcastAttributes.url, getArtworkUrl(podcastAttributes.artwork.url) ?? ""),
+		uploadDate: parseInt(new Date(x.attributes.releaseDateTime).getTime() / 1000),
+		duration: x.attributes.durationInMilliseconds / 1000,
 		viewCount: -1,
-		url: x.trackViewUrl,
+		url: x.attributes.url,
 		isLive: false
-	})));
+	})});
 
 	return new ContentPager(results, false);
 };
@@ -61,7 +134,7 @@ source.getSearchChannelContentsCapabilities = function () {
 	};
 };
 source.searchChannels = function(query) {
-	const url = `https://itunes.apple.com/search?media=podcast&term=${query}`
+	const url = API_SEARCH_PODCASTS_URL_TEMPLATE.replace("{0}", query);
 	const resp = http.GET(url, {});
 	if(!resp.isOk)
 		throw new ScriptException("Failed to get search results [" + resp.code + "]");
@@ -71,14 +144,20 @@ source.searchChannels = function(query) {
 	return new ChannelPager(results, false);
 };
 
-
-
 //Channel
 source.isChannelUrl = function(url) {
 	return REGEX_CHANNEL_URL.test(url);
 };
 source.getChannel = function(url) {
 	const matchUrl = url.match(REGEX_CHANNEL_URL);
+
+	const podcastId = matchUrl[1];
+
+	// check if channel is cached and return it
+	if(state.channel[podcastId]) {
+		return state.channel[podcastId];
+	}
+
 	const resp = http.GET(url, {});
 	if(!resp.isOk)
 		throw new ScriptException("Failed to get channel [" + resp.code + "]");
@@ -90,13 +169,12 @@ source.getChannel = function(url) {
 	}
 	const showData = JSON.parse(showMatch[1]);
 
-	const thumbnail = matchFirstOrDefault(resp.body, REGEX_WEPICTURE);
 	const banner = matchFirstOrDefault(resp.body, REGEX_IMAGE);
-
-	return new PlatformChannel({
-		id: new PlatformID(PLATFORM, matchUrl[1], config.id, undefined),
+	// save channel info to state (cache)
+	state.channel[podcastId] = new PlatformChannel({
+		id: new PlatformID(PLATFORM, podcastId, config.id, undefined),
 		name: showData.name,
-		thumbnail: thumbnail,
+		thumbnail: banner,
 		banner: banner,
 		subscribers: -1,
 		description: showData.description,
@@ -104,6 +182,8 @@ source.getChannel = function(url) {
 		urlAlternatives: [removeQuery(url)],
 		links: {}
 	});
+
+	return state.channel[podcastId];
 };
 
 source.getChannelContents = function(url) {
@@ -124,20 +204,27 @@ class AppleChannelContentPager extends ContentPager {
 	}
 }
 function fetchEpisodesPage(id, offset) {
-	const mediaToken = getMediaToken(URL_CHANNEL + id);
-	const urlEpisodes = `https://amp-api.podcasts.apple.com/v1/catalog/us/podcasts/${id}/episodes?l=en-US&offset=` + (offset ?? 0);
-	const resp = http.GET(urlEpisodes, {"Authorization": "Bearer " + mediaToken, "Origin": "https://podcasts.apple.com"});
+	const urlEpisodes = API_GET_PODCAST_EPISODES_URL_TEMPLATE
+	.replace("{0}", id)
+	.replace("{1}", offset ?? 0);
+	const resp = http.GET(urlEpisodes, state.headers);
 	if(!resp.isOk)
 		throw new ScriptException("Failed to get channel episodes [" + resp.code + "]");
 
-		//"https://is1-ssl.mzstatic.com/image/thumb/Podcasts211/v4/e2/7b/f1/e27bf1c3-82a7-d2a2-4de9-4ffe58918ac7/mza_6121424548892044766.jpg/{w}x{h}bb.{f}"
+	const channelUrl = `${URL_CHANNEL}id${id}`;
+	
+	const channel = source.getChannel(channelUrl); 	// cached request
+	const author = new PlatformAuthorLink(new PlatformID(PLATFORM, id, config.id, undefined), channel.name, URL_CHANNEL + id, channel.thumbnail);
+
 	const episodes = JSON.parse(resp.body);
-	console.log("Episodes", episodes);
-	return episodes.data.map(x=>(new PlatformVideo({
+
+	return episodes.data.map(x=> { 
+
+		return new PlatformVideo({
 		id: new PlatformID(PLATFORM, "" + x.id, config?.id),
 		name: x.attributes.name,
-		thumbnails: new Thumbnails([new Thumbnail(getArtworkUrl(x.attributes.artwork.url, 0))]),
-		author: new PlatformAuthorLink(new PlatformID(PLATFORM, "" + id, config.id, undefined), x.attributes.artistName, URL_CHANNEL + id, "" ?? ""),
+		thumbnails: new Thumbnails([new Thumbnail(getArtworkUrl(x.attributes.artwork.url), 0)]),
+		author: author,
 		uploadDate: parseInt(new Date(x.attributes.releaseDateTime).getTime() / 1000),
 		duration: parseInt(x.attributes.durationInMilliseconds / 1000),
 		viewCount: -1,
@@ -155,48 +242,39 @@ function fetchEpisodesPage(id, offset) {
 				language: Language.UNKNOWN,
 			})
 		])
-	})));
+	})});
 }
-
-
 
 //Video
 source.isContentDetailsUrl = function(url) {
 	return REGEX_CONTENT_URL.test(url);
 };
+
 source.getContentDetails = function(url) {
-	const matchUrl = url.match(REGEX_CONTENT_URL);
 
-	const resp = http.GET(url, {});
+	const episodeId = extractEpisodeId(url);
+
+	if(!episodeId) {
+		throw new ScriptException(`Failed to extract episode id from url ${url}`);
+	}
+	
+	const episodeApiUrl = API_GET_EPISODE_DETAILS_URL_TEMPLATE.replace("{0}", episodeId);
+
+	const resp = http.GET(episodeApiUrl, state.headers, false);
+	
 	if(!resp.isOk)
+	{
 		throw new ScriptException("Failed to get content details [" + resp.code + "]");
-	
-	const episodeDictMatch = resp.body.match(REGEX_SHOEBOX_PODCAST);
-	if(!episodeDictMatch || episodeDictMatch.length != 2) {
-		console.log("No episode data", resp.body);
-		throw new ScriptException("Could not find episode data");
 	}
-	const episodeDictData = JSON.parse(episodeDictMatch[1]);
-	const keys = Object.keys(episodeDictData);
-	const episodeKey = keys.find(x=>/v1.catalog.us.podcast-episodes/.test(x));
-	if(!episodeKey) {
-		console.log("Episode keys:", keys);
-		throw new ScriptException("No episode key found");
-	}
-	const episodeData = JSON.parse(episodeDictData[episodeKey]).d[0];
-	const podcastData = episodeData.relationships.podcast.data[0];
 
-	console.log("Episode Data", episodeData);
-
-	const imageUrl = matchFirstOrDefault(resp.body, REGEX_WEPICTURE, "");
-	const podcastUrl = url.substring(0, url.indexOf("?i="));
-	
+	const episodeData = JSON.parse(resp.body).data.find(x => x.type == "podcast-episodes");
+	const podcastData = episodeData.relationships.podcast.data.find(r => r.type == 'podcasts');	
 
 	return new PlatformVideoDetails({
-		id: new PlatformID(PLATFORM, matchUrl[2], config?.id),
+		id: new PlatformID(PLATFORM, episodeData.id, config?.id),
 		name: episodeData.attributes.name,
 		thumbnails: new Thumbnails([new Thumbnail(getArtworkUrl(episodeData.attributes.artwork.url), 0)]),
-		author: new PlatformAuthorLink(new PlatformID(PLATFORM, matchUrl[1], config.id, undefined), podcastData.attributes.name, podcastUrl, getArtworkUrl(podcastData.attributes.artwork.url)),
+		author: new PlatformAuthorLink(new PlatformID(PLATFORM, podcastData.id, config.id, undefined), podcastData.attributes.name, podcastData.attributes.url, getArtworkUrl(podcastData.attributes.artwork.url)),
 		uploadDate: parseInt(new Date(episodeData.attributes.releaseDateTime).getTime() / 1000),
 		duration: parseInt(episodeData.attributes.durationInMilliseconds / 1000),
 		viewCount: -1,
@@ -217,61 +295,29 @@ source.getContentDetails = function(url) {
 	});
 };
 
+source.saveState = () => {
+	return JSON.stringify(state);
+};
+
+/**
+ * Prepare the artwork URL by replacing the placeholders with the actual values
+ * @param {string} url
+ * @returns {string}
+ */
 function getArtworkUrl(url) {
-	return url.replace("{w}", "268").replace("{h}", "268").replace("{f}", "png");
+	return url
+	.replace("{w}", "268")
+	.replace("{h}", "268")
+	.replace("{f}", "png");
 }
 
-let _mediaToken = undefined;
-function getMediaTokenFromBody(body) {
-	if(_mediaToken)
-		return _mediaToken;
-	const match = body.match(REGEX_CHANNEL_TOKENS);
-	if(match && match.length > 0)
-	{
-		const matchJson = decodeURIComponent(match[1]);
-		const hydration = JSON.parse(matchJson);
-		_mediaToken = hydration?.MEDIA_API?.token;
-		if(_mediaToken)
-			return _mediaToken;
-	}
-	throw new ScriptException("Could not find token");
-}
-function getMediaToken(url) {
-	if(_mediaToken)
-		return _mediaToken;
-	const resp = http.GET(url, {});
-	if(!resp.isOk)
-		throw new ScriptException("Failed to get media token [" + resp.code + "]");
-	return getMediaTokenFromBody(resp.body);
-}
-
-function PTTimeToSeconds(str) {
-	if(!str)
-		return 0;
-	str = str.trim();
-	if(str.indexOf("PT") != 0)
-		return 0;
-	str = str.substring(0);
-	
-	const parts = [..."PT3H6M".matchAll(/([0-9])+?([A-Z])/g)];
-	let seconds = 0;
-	for(let part of parts) {
-		const time = parseInt(parts[1]);
-		switch(part[2]) {
-			case "H":
-				seconds += time * 60 * 60;
-				break;
-			case "M":
-				seconds += time * 60;
-				break;
-			case "S":
-				seconds += time;
-				break;
-		}
-	}
-	return seconds;
-}
-
+/**
+ * Match the first group of the regex and return the default value if not found
+ * @param {string} data
+ * @param {any} regex
+ * @param {string} def
+ * @returns {string}
+ */
 function matchFirstOrDefault(data, regex, def) {
 	const match = data.match(regex);
 	if(match && match.length > 0)
@@ -279,6 +325,11 @@ function matchFirstOrDefault(data, regex, def) {
 	return def;
 }
 
+/**
+ * Remove the remaining query from the URL
+ * @param {string} query
+ * @returns {string}
+ */
 function removeRemainingQuery(query) {
 	const indexSlash = query.indexOf("/");
 	if(indexSlash >= 0)
@@ -291,6 +342,11 @@ function removeRemainingQuery(query) {
 		return query.substring(0, indexAnd);
 	return query;
 }
+/**
+ * Remove the query from the URL
+ * @param {string} query
+ * @returns {string}
+ */
 function removeQuery(query) {
 	const indexQuestion = query.indexOf("?");
 	if(indexQuestion >= 0)
@@ -298,5 +354,41 @@ function removeQuery(query) {
 	return query;
 }
 
+/**
+ * Extract the main script file name from the HTML content
+ * @param {string} htmlContent
+ * @returns {string}
+ */
+function extractScriptFileName(htmlContent) {
+    // Define the regex pattern to match 'index-*.js'
+    const match = htmlContent.match(REGEX_MAIN_SCRIPT_FILENAME);
+    
+    // Return the matched file name if found, otherwise return null
+    return match ? match[0] : null;
+}
+
+/**
+ * Extract the JWT token from the main script
+ * Looks for a string that starts with 'eyJhbGci' representing the encoded header
+ * @param {string} scriptContent
+ * @returns {string}
+ */
+function extractJWT(scriptContent) {
+    // Use the match method to find the JWT token in the script content
+    const match = scriptContent.match(REGEX_JWT);
+    
+    // Return the matched JWT if found, otherwise return null
+    return match ? match[0] : null;
+}
+
+/**
+ * Extract the episode ID from the URL
+ * @param {string} url
+ * @returns {string}
+ */
+function extractEpisodeId(url) {
+    const match = url.match(REGEX_EPISODE_ID);
+    return match ? match[1] : null;
+}
 
 console.log("LOADED");

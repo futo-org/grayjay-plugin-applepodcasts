@@ -116,9 +116,9 @@ source.getHome = function() {
 		const podcastAttributes = podcast?.attributes;
 		return new PlatformVideo({
 			id: new PlatformID(PLATFORM, x.id + "", config?.id),
-			name: podcastAttributes?.name ?? '',
+			name: x.attributes.itunesTitle ?? x.attributes.name ?? '',
 			thumbnails: new Thumbnails([new Thumbnail(getArtworkUrl(x.attributes.artwork.url), 0)]),
-			author: new PlatformAuthorLink(new PlatformID(PLATFORM, podcast.id, config.id, undefined), podcastAttributes.artistName, podcastAttributes.url, getArtworkUrl(podcastAttributes.artwork.url) ?? ""),
+			author: new PlatformAuthorLink(new PlatformID(PLATFORM, podcast.id, config.id, undefined), podcastAttributes?.name, podcastAttributes.url, getArtworkUrl(podcastAttributes.artwork.url) ?? ""),
 			uploadDate: parseInt(new Date(x.attributes.releaseDateTime).getTime() / 1000),
 			duration: x.attributes.durationInMilliseconds / 1000,
 			viewCount: -1,
@@ -158,9 +158,9 @@ source.search = function (query, type, order, filters) {
 
 	return new PlatformVideo({
 		id: new PlatformID(PLATFORM, x.id + "", config?.id),
-		name: podcastAttributes?.name ?? '',
+		name: x?.attributes?.name ?? '',
 		thumbnails: new Thumbnails([new Thumbnail(getArtworkUrl(x.attributes.artwork.url), 0)]),
-		author: new PlatformAuthorLink(new PlatformID(PLATFORM, podcast.id, config.id, undefined), podcastAttributes.artistName, podcastAttributes.url, getArtworkUrl(podcastAttributes.artwork.url) ?? ""),
+		author: new PlatformAuthorLink(new PlatformID(PLATFORM, podcast.id, config.id, undefined), podcastAttributes?.name ?? '', podcastAttributes.url, getArtworkUrl(podcastAttributes.artwork.url) ?? ""),
 		uploadDate: parseInt(new Date(x.attributes.releaseDateTime).getTime() / 1000),
 		duration: x.attributes.durationInMilliseconds / 1000,
 		viewCount: -1,
@@ -183,7 +183,7 @@ source.searchChannels = function(query) {
 	if(!resp.isOk)
 		throw new ScriptException("Failed to get search results [" + resp.code + "]");
 	const result = JSON.parse(resp.body);
-	const results = result.results.map(x=>new PlatformAuthorLink(new PlatformID(PLATFORM, "" + x.artistId, config.id, undefined), x.artistName, x.collectionViewUrl, x.artworkUrl100 ?? ""));
+	const results = result.results.map(x=>new PlatformAuthorLink(new PlatformID(PLATFORM, "" + x.artistId, config.id, undefined), x?.collectionName ?? x?.trackName ?? x?.collectionCensoredName ?? '', x.collectionViewUrl, x.artworkUrl100 ?? ""));
 
 	return new ChannelPager(results, false);
 };

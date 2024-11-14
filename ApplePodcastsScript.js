@@ -307,6 +307,11 @@ source.getContentDetails = function(url) {
 	}
 
 	const episodeData = JSON.parse(resp.body).data.find(x => x.type == "podcast-episodes");
+
+	if(!episodeData?.attributes?.assetUrl) {
+		throw new UnavailableException("This episode is not available yet");
+	}
+
 	const podcastData = episodeData.relationships.podcast.data.find(r => r.type == 'podcasts');	
 
 	return new PlatformVideoDetails({

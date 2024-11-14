@@ -386,8 +386,8 @@ function getVideoSource(episodeData) {
  */
 function getArtworkUrl(url) {
 	return url
-	.replace("{w}", "268")
-	.replace("{h}", "268")
+	.replace("{w}", "500")
+	.replace("{h}", "500")
 	.replace("{f}", "png");
 }
 

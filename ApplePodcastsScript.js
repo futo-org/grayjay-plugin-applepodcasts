@@ -32,7 +32,8 @@ let COUNTRY_CODES = [];
 
 let config = {};
 let _settings = {
-	countryIndex: 0
+	countryIndex: 0,
+	allowExplicit: false
 };
 
 //Source Methods
@@ -43,6 +44,7 @@ source.enable = function(conf, settings, savedState){
 
 		if (IS_TESTING) {
 			_settings.countryIndex = 0; //countrycode=us
+			_settings.allowExplicit = false;
 		}
 		
 		COUNTRY_CODES = loadOptionsForSetting('countryIndex').map((c) => c.toLowerCase().split(' - ')[0]);
@@ -310,6 +312,10 @@ source.getContentDetails = function(url) {
 
 	if(!episodeData?.attributes?.assetUrl) {
 		throw new UnavailableException("This episode is not available yet");
+	}
+
+	if(episodeData.attributes.contentRating == 'explicit' && !_settings["allowExplicit"]) {
+		throw new UnavailableException("Explicit videos can be allowed using the plugin settings");
 	}
 
 	const podcastData = episodeData.relationships.podcast.data.find(r => r.type == 'podcasts');	

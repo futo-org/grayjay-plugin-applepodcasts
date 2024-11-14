@@ -5,9 +5,9 @@ const URL_CHANNEL = "https://podcasts.apple.com/us/podcast/";
 
 const API_SEARCH_URL_TEMPLATE = 'https://amp-api.podcasts.apple.com/v1/catalog/us/search/groups?groups=episode&l=en-US&offset=25&term={0}&types=podcast-episodes&platform=web&extend[podcast-channels]=availableShowCount&include[podcast-episodes]=channel,podcast&limit=25&with=entitlements';
 const API_SEARCH_PODCASTS_URL_TEMPLATE = 'https://itunes.apple.com/search?media=podcast&term={0}';
-const API_GET_PODCAST_EPISODES_URL_TEMPLATE = 'https://amp-api.podcasts.apple.com/v1/catalog/us/podcasts/{0}/episodes?l=en-US&offset={1}';
-const API_GET_EPISODE_DETAILS_URL_TEMPLATE = 'https://amp-api.podcasts.apple.com/v1/catalog/us/podcast-episodes/{0}?include=channel,podcast&include[podcasts]=episodes,podcast-seasons,trailers&include[podcast-seasons]=episodes&fields=artistName,artwork,assetUrl,contentRating,description,durationInMilliseconds,episodeNumber,guid,isExplicit,kind,mediaKind,name,offers,releaseDateTime,season,seasonNumber,storeUrl,summary,title,url&with=entitlements&l=en-US';
-const API_GET_TRENDING_EPISODES = 'https://amp-api.podcasts.apple.com/v1/catalog/us/charts?extend[podcasts]=editorialArtwork,feedUrl&include[podcast-episodes]=podcast&limit=50&types=podcast-episodes&chart=top&genre=26&with=entitlements&l=en-US';
+const API_GET_PODCAST_EPISODES_URL_TEMPLATE = 'https://amp-api.podcasts.apple.com/v1/catalog/{0}/podcasts/{1}/episodes?l=en-US&offset={2}';
+const API_GET_EPISODE_DETAILS_URL_TEMPLATE = 'https://amp-api.podcasts.apple.com/v1/catalog/{0}/podcast-episodes/{1}?include=channel,podcast&include[podcasts]=episodes,podcast-seasons,trailers&include[podcast-seasons]=episodes&fields=artistName,artwork,assetUrl,contentRating,description,durationInMilliseconds,episodeNumber,guid,isExplicit,kind,mediaKind,name,offers,releaseDateTime,season,seasonNumber,storeUrl,summary,title,url&with=entitlements&l=en-US';
+const API_GET_TRENDING_EPISODES_URL_TEMPLATE = 'https://amp-api.podcasts.apple.com/v1/catalog/{0}/charts?extend[podcasts]=editorialArtwork,feedUrl&include[podcast-episodes]=podcast&limit=100&types=podcast-episodes&chart=top&genre=26&with=entitlements&l=en-US';
 
 const REGEX_CONTENT_URL = /https:\/\/podcasts\.apple\.com\/[a-zA-Z]*\/podcast\/.*?\/id([0-9]*)\?i=([0-9]*).*?/s
 const REGEX_CHANNEL_URL = /https:\/\/podcasts\.apple\.com\/[a-zA-Z]{2}\/podcast(?:\/[^/]+)?\/(?:id)?([0-9]+)/si;
@@ -20,18 +20,32 @@ const REGEX_SHOEBOX_PODCAST = /<script type="fastboot\/shoebox" id="shoebox-medi
 const REGEX_MAIN_SCRIPT_FILENAME = /index-\w+\.js/;
 const REGEX_JWT = /\beyJhbGci[A-Za-z0-9-_]+?\.[A-Za-z0-9-_]+?\.[A-Za-z0-9-_]{43,}\b/;
 const REGEX_EPISODE_ID = /[?&]i=([^&]+)/;
+const REGEX_COUNTRY_CODE = /^https:\/\/podcasts\.apple\.com\/([a-z]{2})\//;
 
 let state = {
 	headers: {},
 	channel: {}
 };
 
+let COUNTRY_CODES = [];
+
+
 let config = {};
+let _settings = {
+	countryIndex: 0
+};
 
 //Source Methods
 source.enable = function(conf, settings, savedState){
 	try {
 		config = conf ?? {};
+		_settings = settings ?? {};
+
+		if (IS_TESTING) {
+			_settings.countryIndex = 0; //countrycode=us
+		}
+		
+		COUNTRY_CODES = loadOptionsForSetting('countryIndex').map((c) => c.toLowerCase().split(' - ')[0]);
 
 		let didSaveState = false;
 	  
@@ -86,7 +100,10 @@ source.enable = function(conf, settings, savedState){
 
 source.getHome = function() {
 
-	const resp = http.GET(API_GET_TRENDING_EPISODES, state.headers);
+	const selectedCountry = COUNTRY_CODES[_settings.countryIndex];
+	const url = API_GET_TRENDING_EPISODES_URL_TEMPLATE.replace("{0}", selectedCountry);
+
+	const resp = http.GET(url, state.headers);
 
 	if(!resp.isOk)
 		return new ContentPager([], false);
@@ -215,26 +232,28 @@ source.getChannel = function(url) {
 
 source.getChannelContents = function(url) {
 	const id = removeRemainingQuery(url.match(REGEX_CHANNEL_URL)[1]);
-	return new AppleChannelContentPager(id);
+	return new AppleChannelContentPager(id, extractCountryCode(url));
 };
 class AppleChannelContentPager extends ContentPager {
-	constructor(id) {
-		super(fetchEpisodesPage(id, 0), true);
+	constructor(id, countryCode) {
+		super(fetchEpisodesPage(id, 0, countryCode), true);
 		this.offset = this.results.length;
 		this.id = id;
+		this.countryCode = countryCode;
 	}
 
 	nextPage() {
 		this.offset += 10;
-		this.results = fetchEpisodesPage(this.id, this.offset);
+		this.results = fetchEpisodesPage(this.id, this.offset, this.countryCode);
 		this.hasMore = this.results.length > 0;
 		return this;
 	}
 }
-function fetchEpisodesPage(id, offset=0) {
+function fetchEpisodesPage(id, offset=0, countryCode='us') {
 	const urlEpisodes = API_GET_PODCAST_EPISODES_URL_TEMPLATE
-	.replace("{0}", id)
-	.replace("{1}", offset);
+	.replace("{0}", countryCode)
+	.replace("{1}", id)
+	.replace("{2}", offset);
 	const resp = http.GET(urlEpisodes, state.headers);
 	if(!resp.isOk)
 		return [];
@@ -276,7 +295,9 @@ source.getContentDetails = function(url) {
 		throw new ScriptException(`Failed to extract episode id from url ${url}`);
 	}
 	
-	const episodeApiUrl = API_GET_EPISODE_DETAILS_URL_TEMPLATE.replace("{0}", episodeId);
+	const episodeApiUrl = API_GET_EPISODE_DETAILS_URL_TEMPLATE
+	.replace("{0}", extractCountryCode(url))
+	.replace("{1}", episodeId);
 
 	const resp = http.GET(episodeApiUrl, state.headers, false);
 	
@@ -448,6 +469,27 @@ function extractJWT(scriptContent) {
 function extractEpisodeId(url) {
     const match = url.match(REGEX_EPISODE_ID);
     return match ? match[1] : null;
+}
+
+/**
+ * Returs the options values for a setting. If the setting is not found, an empty array is returned.
+ * @param {string} settingKey
+ * @returns {string[]}
+ */
+function loadOptionsForSetting(settingKey) {
+	return config?.settings?.find((s) => s.variable == settingKey)
+	  ?.options ?? [];
+}
+
+
+/**
+ * Extract the country code from the URL since it is needed for the API requests
+ * @param {string} url
+ * @returns {string}
+ */
+function extractCountryCode(url) {
+    const match = url.match(REGEX_COUNTRY_CODE);
+    return match ? match[1] : null; // Returns the country code or null if not found
 }
 
 console.log("LOADED");

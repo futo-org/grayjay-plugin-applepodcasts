@@ -1,5 +1,6 @@
 const PLATFORM = "Apple Podcasts";
 const PLATFORM_BASE_URL = "https://podcasts.apple.com";
+const PLATFORM_BASE_URL_API = 'https://amp-api.podcasts.apple.com'
 const PLATFORM_BASE_ASSETS_URL = "https://podcasts.apple.com/assets/";
 const URL_CHANNEL = "https://podcasts.apple.com/us/podcast/";
 
@@ -7,7 +8,9 @@ const API_SEARCH_URL_TEMPLATE = 'https://amp-api.podcasts.apple.com/v1/catalog/u
 const API_SEARCH_PODCASTS_URL_TEMPLATE = 'https://itunes.apple.com/search?media=podcast&term={0}';
 const API_GET_PODCAST_EPISODES_URL_TEMPLATE = 'https://amp-api.podcasts.apple.com/v1/catalog/{0}/podcasts/{1}/episodes?l=en-US&offset={2}';
 const API_GET_EPISODE_DETAILS_URL_TEMPLATE = 'https://amp-api.podcasts.apple.com/v1/catalog/{0}/podcast-episodes/{1}?include=channel,podcast&include[podcasts]=episodes,podcast-seasons,trailers&include[podcast-seasons]=episodes&fields=artistName,artwork,assetUrl,contentRating,description,durationInMilliseconds,episodeNumber,guid,isExplicit,kind,mediaKind,name,offers,releaseDateTime,season,seasonNumber,storeUrl,summary,title,url&with=entitlements&l=en-US';
-const API_GET_TRENDING_EPISODES_URL_TEMPLATE = 'https://amp-api.podcasts.apple.com/v1/catalog/{0}/charts?extend[podcasts]=editorialArtwork,feedUrl&include[podcast-episodes]=podcast&limit=100&types=podcast-episodes&chart=top&genre=26&with=entitlements&l=en-US';
+
+const API_GET_TRENDING_EPISODES_URL_PATH_TEMPLATE = '/v1/catalog/{country}/charts?chart=top&genre=26&l=en-US&limit=10&offset=0&types=podcast-episodes'
+const API_GET_TRENDING_EPISODES_URL_QUERY_PARAMS = 'extend[podcasts]=editorialArtwork,feedUrl&include[podcast-episodes]=podcast&types=podcast-episodes&with=entitlements';
 
 const REGEX_CONTENT_URL = /https:\/\/podcasts\.apple\.com\/[a-zA-Z]*\/podcast\/.*?\/id([0-9]*)\?i=([0-9]*).*?/s
 const REGEX_CHANNEL_URL = /https:\/\/podcasts\.apple\.com\/[a-zA-Z]{2}\/podcast(?:\/[^/]+)?\/(?:id)?([0-9]+)/si;
@@ -100,37 +103,53 @@ source.enable = function(conf, settings, savedState){
 	}
 }
 
-source.getHome = function() {
+source.getHome = function () {
 
-	const selectedCountry = COUNTRY_CODES[_settings.countryIndex];
-	const url = API_GET_TRENDING_EPISODES_URL_TEMPLATE.replace("{0}", selectedCountry);
+    const selectedCountry = COUNTRY_CODES[_settings.countryIndex];
+    const requestPath = API_GET_TRENDING_EPISODES_URL_PATH_TEMPLATE.replace("{country}", selectedCountry);
 
-	const resp = http.GET(url, state.headers);
+    class RecommendedVideoPager extends VideoPager {
+        constructor({ media = [], hasMore = true, context = { requestPath } } = {}) {
+            super(media, hasMore, context);
+            this.url = `${PLATFORM_BASE_URL_API}/${context.requestPath}&${API_GET_TRENDING_EPISODES_URL_QUERY_PARAMS}`;
+        }
 
-	if(!resp.isOk)
-		return new ContentPager([], false);
+        nextPage() {
+            const resp = http.GET(this.url, state.headers);
 
-	const result = JSON.parse(resp.body)?.results?.['podcast-episodes']?.find(x=>x.chart == "top")?.data ?? [];
+            if (!resp.isOk)
+                return new ContentPager([], false);
 
-	const contents = result
-	.map(x=>{
-		const podcast = x.relationships?.podcast?.data?.find(p => p.type == 'podcasts');
-		const podcastAttributes = podcast?.attributes;
-		return new PlatformVideo({
-			id: new PlatformID(PLATFORM, x.id + "", config?.id),
-			name: x.attributes.itunesTitle ?? x.attributes.name ?? '',
-			thumbnails: new Thumbnails([new Thumbnail(getArtworkUrl(x.attributes.artwork.url), 0)]),
-			author: new PlatformAuthorLink(new PlatformID(PLATFORM, podcast.id, config.id, undefined), podcastAttributes?.name, podcastAttributes.url, getArtworkUrl(podcastAttributes.artwork.url) ?? ""),
-			uploadDate: parseInt(new Date(x.attributes.releaseDateTime).getTime() / 1000),
-			duration: x.attributes.durationInMilliseconds / 1000,
-			viewCount: -1,
-			url: x.attributes.url,
-			isLive: false
-		})})
-	.sort((a, b) => b.datetime - a.datetime);
-	
-	return new ContentPager(contents, false);
-	
+            const episodes = JSON.parse(resp.body)?.results?.['podcast-episodes']?.find(x => x.chart == "top");
+
+            const contents = (episodes?.data ?? [])
+                .map(x => {
+                    const podcast = x.relationships?.podcast?.data?.find(p => p.type == 'podcasts');
+                    const podcastAttributes = podcast?.attributes;
+                    return new PlatformVideo({
+                        id: new PlatformID(PLATFORM, x.id + "", config?.id),
+                        name: x.attributes.itunesTitle ?? x.attributes.name ?? '',
+                        thumbnails: new Thumbnails([new Thumbnail(getArtworkUrl(x.attributes.artwork.url), 0)]),
+                        author: new PlatformAuthorLink(new PlatformID(PLATFORM, podcast.id, config.id, undefined), podcastAttributes?.name, podcastAttributes.url, getArtworkUrl(podcastAttributes.artwork.url) ?? ""),
+                        uploadDate: parseInt(new Date(x.attributes.releaseDateTime).getTime() / 1000),
+                        duration: x.attributes.durationInMilliseconds / 1000,
+                        viewCount: -1,
+                        url: x.attributes.url,
+                        isLive: false
+                    })
+                })
+                .sort((a, b) => b.datetime - a.datetime);
+
+            return new RecommendedVideoPager({
+                media: contents,
+                hasMore: !!episodes.next,
+                context: { requestPath: episodes.next },
+            });
+        }
+    }
+
+    return new RecommendedVideoPager({ context: { requestPath } }).nextPage();
+
 };
 
 source.searchSuggestions = function(query) {

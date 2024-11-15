@@ -12,6 +12,8 @@ const API_GET_EPISODE_DETAILS_URL_TEMPLATE = 'https://amp-api.podcasts.apple.com
 const API_GET_TRENDING_EPISODES_URL_PATH_TEMPLATE = '/v1/catalog/{country}/charts?chart=top&genre=26&l=en-US&limit=10&offset=0&types=podcast-episodes'
 const API_GET_TRENDING_EPISODES_URL_QUERY_PARAMS = 'extend[podcasts]=editorialArtwork,feedUrl&include[podcast-episodes]=podcast&types=podcast-episodes&with=entitlements';
 
+const API_GET_SUBSCRIPTIONS_FIRST_PAGE_PATH = '/v1/me/library/podcasts?limit=30&relate[podcasts]=channel&with=entitlements&l=en-US';//next pages are gotten from the next field (cursor) in the response
+
 const REGEX_CONTENT_URL = /https:\/\/podcasts\.apple\.com\/[a-zA-Z]*\/podcast\/.*?\/id([0-9]*)\?i=([0-9]*).*?/s
 const REGEX_CHANNEL_URL = /https:\/\/podcasts\.apple\.com\/[a-zA-Z]{2}\/podcast(?:\/[^/]+)?\/(?:id)?([0-9]+)/si;
 const REGEX_CHANNEL_SHOW = /<script id=schema:show type="application\/ld\+json">(.*?)<\/script>/s
@@ -95,7 +97,7 @@ source.enable = function(conf, settings, savedState){
 			  throw new ScriptException("Failed to extract Token");
 		  }
 	
-		  state.headers = { Authorization: `Bearer ${token}`, Origin: PLATFORM_BASE_URL};
+		  state.headers = { Authorization: `Bearer ${token}`, Origin: PLATFORM_BASE_URL, 'User-Agent': config.authentication.userAgent };
 		  
 		}
 	} catch(e) {
@@ -357,6 +359,38 @@ source.getContentDetails = function(url) {
 source.saveState = () => {
 	return JSON.stringify(state);
 };
+
+source.getUserSubscriptions = () => {
+	
+	if (!bridge.isLoggedIn()) {
+	  log('Failed to retrieve subscriptions page because not logged in.');
+	  throw new ScriptException('Not logged in');
+	}
+
+	let next = API_GET_SUBSCRIPTIONS_FIRST_PAGE_PATH;
+	let hasMore = false;
+	const subscriptionUrlList = [];
+
+	do {
+
+		const resp = http.GET(`${PLATFORM_BASE_URL_API}${next}`, state.headers , true);
+
+		if(!resp.isOk)
+			return [];
+
+		const podcasts = JSON.parse(resp.body);
+
+		podcasts.data.forEach(podcast => {
+			subscriptionUrlList.push(podcast.attributes.url);
+		});
+
+		hasMore = !!podcasts.next;
+		next = podcasts.next;
+
+	} while(hasMore);
+
+	return subscriptionUrlList;
+}
 
 /**
  * Generates a video or audio source descriptor based on the provided episode data.

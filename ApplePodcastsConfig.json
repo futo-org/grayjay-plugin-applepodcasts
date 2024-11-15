@@ -22,13 +22,13 @@
         "amp-api.podcasts.apple.com"
     ],
     "settings": [
-		{
-			"variable": "allowExplicit",
-			"name": "Allow Explicit Content",
-			"description": "Allow watching of explicit videos",
-			"type": "Boolean",
-			"default": "false"
-		},
+        {
+            "variable": "allowExplicit",
+            "name": "Allow Explicit Content",
+            "description": "Allow watching of explicit videos",
+            "type": "Boolean",
+            "default": "false"
+        },
         {
             "variable": "countryIndex",
             "name": "Country",
@@ -207,5 +207,12 @@
                 "ZW - Zimbabwe"
             ]
         }
-    ]
+    ],
+    "authentication": {
+        "loginUrl": "https://podcasts.apple.com/includes/commerce/authenticate?product=podcasts",
+        "cookiesToFind": [
+            "media-user-token"
+        ],
+        "userAgent": "Mozilla/5.0 (iPad; CPU OS 14_7_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.2 Mobile/15E148 Safari/604.1"
+    }
 }

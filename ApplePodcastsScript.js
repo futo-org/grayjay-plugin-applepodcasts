@@ -6,9 +6,9 @@ const PLATFORM_BASE_ASSETS_URL = "https://podcasts.apple.com/assets/";
 const URL_CHANNEL = "https://podcasts.apple.com/us/podcast/";
 
 const API_SEARCH_URL_TEMPLATE = 'https://amp-api.podcasts.apple.com/v1/catalog/us/search/groups?groups=episode&l=en-US&offset=25&term={0}&types=podcast-episodes&platform=web&extend[podcast-channels]=availableShowCount&include[podcast-episodes]=channel,podcast&limit=25&with=entitlements';
-const API_SEARCH_PODCASTS_URL_TEMPLATE = 'https://itunes.apple.com/search?media=podcast&term={0}';
-const API_GET_PODCAST_EPISODES_URL_TEMPLATE = 'https://amp-api.podcasts.apple.com/v1/catalog/{0}/podcasts/{1}/episodes?l=en-US&offset={2}';
-const API_GET_EPISODE_DETAILS_URL_TEMPLATE = 'https://amp-api.podcasts.apple.com/v1/catalog/{0}/podcast-episodes/{1}?include=channel,podcast&include[podcasts]=episodes,podcast-seasons,trailers&include[podcast-seasons]=episodes&fields=artistName,artwork,assetUrl,contentRating,description,durationInMilliseconds,episodeNumber,guid,isExplicit,kind,mediaKind,name,offers,releaseDateTime,season,seasonNumber,storeUrl,summary,title,url&with=entitlements&l=en-US';
+const API_SEARCH_PODCASTS_URL_TEMPLATE = 'https://itunes.apple.com/search?media=podcast&term={query}';
+const API_GET_PODCAST_EPISODES_URL_TEMPLATE = 'https://amp-api.podcasts.apple.com/v1/catalog/{country}/podcasts/{podcast-id}/episodes?l=en-US&offset={offset}';
+const API_GET_EPISODE_DETAILS_URL_TEMPLATE = 'https://amp-api.podcasts.apple.com/v1/catalog/{country}/podcast-episodes/{episode-id}?include=channel,podcast&include[podcasts]=episodes,podcast-seasons,trailers&include[podcast-seasons]=episodes&fields=artistName,artwork,assetUrl,contentRating,description,durationInMilliseconds,episodeNumber,guid,isExplicit,kind,mediaKind,name,offers,releaseDateTime,season,seasonNumber,storeUrl,summary,title,url&with=entitlements&l=en-US';
 
 const API_GET_TRENDING_EPISODES_URL_PATH_TEMPLATE = '/v1/catalog/{country}/charts?chart=top&genre=26&l=en-US&limit=10&offset=0&types=podcast-episodes'
 const API_GET_TRENDING_EPISODES_URL_QUERY_PARAMS = 'extend[podcasts]=editorialArtwork,feedUrl&include[podcast-episodes]=podcast&types=podcast-episodes&with=entitlements';
@@ -19,14 +19,12 @@ const API_GET_SAVED_EPISODES_FIRST_PAGE_PATH = '/v1/me/library/podcast-episodes?
 const REGEX_CONTENT_URL = /https:\/\/podcasts\.apple\.com\/[a-zA-Z]*\/podcast\/.*?\/id([0-9]*)\?i=([0-9]*).*?/s
 const REGEX_CHANNEL_URL = /https:\/\/podcasts\.apple\.com\/[a-zA-Z]{2}\/podcast(?:\/[^/]+)?\/(?:id)?([0-9]+)/si;
 const REGEX_CHANNEL_SHOW = /<script id=schema:show type="application\/ld\+json">(.*?)<\/script>/s
-const REGEX_CHANNEL_TOKENS = /<meta name="web-experience-app\/config\/environment" content="(.*?)"/s
 const REGEX_EPISODE = /<script name="schema:podcast-episode" type="application\/ld\+json">(.*?)<\/script>/s
+const REGEX_EPISODE_ID = /[?&]i=([^&]+)/;
 const REGEX_IMAGE = /<meta property="og:image" content="(.*?)">/s
 const REGEX_CANONICAL_URL = /<link rel="canonical" href="(https:\/\/podcasts.apple.com\/[a-zA-Z]*\/podcast\/.*?)">/s
-const REGEX_SHOEBOX_PODCAST = /<script type="fastboot\/shoebox" id="shoebox-media-api-cache-amp-podcasts">(.*?)<\/script>/s
 const REGEX_MAIN_SCRIPT_FILENAME = /index-\w+\.js/;
 const REGEX_JWT = /\beyJhbGci[A-Za-z0-9-_]+?\.[A-Za-z0-9-_]+?\.[A-Za-z0-9-_]{43,}\b/;
-const REGEX_EPISODE_ID = /[?&]i=([^&]+)/;
 const REGEX_COUNTRY_CODE = /^https:\/\/podcasts\.apple\.com\/([a-z]{2})\//;
 
 const SAVED_EPISODES_KEY  = 'applepodcasts:playlist:savedepisodes';
@@ -205,7 +203,7 @@ source.getSearchChannelContentsCapabilities = function () {
 	};
 };
 source.searchChannels = function(query) {
-	const url = API_SEARCH_PODCASTS_URL_TEMPLATE.replace("{0}", query);
+	const url = API_SEARCH_PODCASTS_URL_TEMPLATE.replace("{query}", query);
 	const resp = http.GET(url, {});
 	if(!resp.isOk)
 		throw new ScriptException("Failed to get search results [" + resp.code + "]");
@@ -278,9 +276,9 @@ class AppleChannelContentPager extends ContentPager {
 }
 function fetchEpisodesPage(id, offset=0, countryCode='us') {
 	const urlEpisodes = API_GET_PODCAST_EPISODES_URL_TEMPLATE
-	.replace("{0}", countryCode)
-	.replace("{1}", id)
-	.replace("{2}", offset);
+	.replace("{country}", countryCode)
+	.replace("{podcast-id}", id)
+	.replace("{offset}", offset);
 	const resp = http.GET(urlEpisodes, state.headers);
 	if(!resp.isOk)
 		return [];
@@ -323,8 +321,8 @@ source.getContentDetails = function(url) {
 	}
 	
 	const episodeApiUrl = API_GET_EPISODE_DETAILS_URL_TEMPLATE
-	.replace("{0}", extractCountryCode(url))
-	.replace("{1}", episodeId);
+	.replace("{country}", extractCountryCode(url))
+	.replace("{episode-id}", episodeId);
 
 	const resp = http.GET(episodeApiUrl, state.headers, false);
 	

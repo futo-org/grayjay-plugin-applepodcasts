@@ -1,5 +1,6 @@
 const PLATFORM = "Apple Podcasts";
 const PLATFORM_BASE_URL = "https://podcasts.apple.com";
+const PLATFORM_SAVED_EPISODES_URL = "https://podcasts.apple.com/{country}/library/saved-episodes";
 const PLATFORM_BASE_URL_API = 'https://amp-api.podcasts.apple.com'
 const PLATFORM_BASE_ASSETS_URL = "https://podcasts.apple.com/assets/";
 const URL_CHANNEL = "https://podcasts.apple.com/us/podcast/";
@@ -13,6 +14,7 @@ const API_GET_TRENDING_EPISODES_URL_PATH_TEMPLATE = '/v1/catalog/{country}/chart
 const API_GET_TRENDING_EPISODES_URL_QUERY_PARAMS = 'extend[podcasts]=editorialArtwork,feedUrl&include[podcast-episodes]=podcast&types=podcast-episodes&with=entitlements';
 
 const API_GET_SUBSCRIPTIONS_FIRST_PAGE_PATH = '/v1/me/library/podcasts?limit=30&relate[podcasts]=channel&with=entitlements&l=en-US';//next pages are gotten from the next field (cursor) in the response
+const API_GET_SAVED_EPISODES_FIRST_PAGE_PATH = '/v1/me/library/podcast-episodes?include[podcast-episodes]=channel,playback-position,podcast&limit=30&fields[podcast-channels]=subscriptionName,isSubscribed&with=entitlements&l=en-US';//next pages are gotten from the next field (cursor) in the response
 
 const REGEX_CONTENT_URL = /https:\/\/podcasts\.apple\.com\/[a-zA-Z]*\/podcast\/.*?\/id([0-9]*)\?i=([0-9]*).*?/s
 const REGEX_CHANNEL_URL = /https:\/\/podcasts\.apple\.com\/[a-zA-Z]{2}\/podcast(?:\/[^/]+)?\/(?:id)?([0-9]+)/si;
@@ -26,6 +28,8 @@ const REGEX_MAIN_SCRIPT_FILENAME = /index-\w+\.js/;
 const REGEX_JWT = /\beyJhbGci[A-Za-z0-9-_]+?\.[A-Za-z0-9-_]+?\.[A-Za-z0-9-_]{43,}\b/;
 const REGEX_EPISODE_ID = /[?&]i=([^&]+)/;
 const REGEX_COUNTRY_CODE = /^https:\/\/podcasts\.apple\.com\/([a-z]{2})\//;
+
+const SAVED_EPISODES_KEY  = 'applepodcasts:playlist:savedepisodes';
 
 let state = {
 	headers: {},
@@ -392,6 +396,93 @@ source.getUserSubscriptions = () => {
 	return subscriptionUrlList;
 }
 
+source.isPlaylistUrl = function(url) {
+	// currently only playlists are saved episodes
+	return url == SAVED_EPISODES_KEY;
+}
+
+source.getUserPlaylists = function () {
+	// currently only playlists are saved episodes
+	return [SAVED_EPISODES_KEY];
+}
+
+source.getPlaylist = function (url) {
+	// currently only playlists are saved episodes
+	if(url == SAVED_EPISODES_KEY) {
+		
+		if (!bridge.isLoggedIn()) {
+			log('Failed to retrieve subscriptions page because not logged in.');
+			throw new ScriptException('Not logged in');
+		  }
+	  
+		  let next = API_GET_SAVED_EPISODES_FIRST_PAGE_PATH;
+		  let hasMore = false;
+		  const playlistItems = [];
+	  
+		  do {
+	  
+			  const resp = http.GET(`${PLATFORM_BASE_URL_API}${next}`, state.headers , true);
+	  
+			  if(!resp.isOk)
+				  return [];
+	  
+			  const podcasts = JSON.parse(resp.body);
+	  
+			  podcasts.data.forEach(podcast => {
+				  playlistItems.push(podcast);
+			  });
+	  
+			  hasMore = !!podcasts.next;
+			  next = podcasts.next;
+			  
+		  } while(hasMore);
+
+		  const all = playlistItems.map(x => {
+			const podcast = x?.relationships?.podcast?.data?.find(p => p.type == 'podcasts');
+
+			const podcastId = podcast?.id ?? extractPodcastId(x.attributes.url) ?? '';
+
+			const podcastAttributes = podcast?.attributes;
+
+			return new PlatformVideo({
+				id: new PlatformID(PLATFORM, x?.id ?? '', config?.id),
+				name: x.attributes.itunesTitle ?? x.attributes.name ?? '',
+				thumbnails: new Thumbnails([new Thumbnail(getArtworkUrl(x.attributes.artwork.url), 0)]),
+				author: new PlatformAuthorLink(new PlatformID(PLATFORM, podcastId, config.id, undefined), podcastAttributes?.name ?? '', podcastAttributes?.url ?? '', podcastAttributes?.artwork?.url ? getArtworkUrl(podcastAttributes.artwork.url) : ''),
+				uploadDate: parseInt(new Date(x.attributes.releaseDateTime).getTime() / 1000),
+				duration: x.attributes.durationInMilliseconds / 1000,
+				viewCount: -1,
+				url: x.attributes.url,
+				isLive: false
+			})
+		})
+		.filter(x => x != null)
+		.sort((a, b) => b.datetime - a.datetime);
+
+
+		const thumbnailUrl = all.length ? (all?.[0]?.thumbnails?.sources?.[0].url ?? '') : '';
+
+		const savedEpisodesPlaylistUrl = PLATFORM_SAVED_EPISODES_URL.replace("{country}", COUNTRY_CODES[_settings.countryIndex]);
+
+		return new PlatformPlaylistDetails({
+			url: savedEpisodesPlaylistUrl,
+			id: new PlatformID(PLATFORM, 'playlistid', config.id),
+			author: new PlatformAuthorLink(
+				new PlatformID(PLATFORM, '', config.id),
+				'',// author name
+				'',// author url
+			  ),
+			name: 'Saved Episodes',// playlist name
+			thumbnail: thumbnailUrl,
+			videoCount: all.length,
+			contents: new VideoPager(all),
+		});
+				
+	} else {
+		throw new ScriptException('Invalid playlist url');
+	}
+}
+
 /**
  * Generates a video or audio source descriptor based on the provided episode data.
  * 
@@ -533,6 +624,27 @@ function extractJWT(scriptContent) {
 function extractEpisodeId(url) {
     const match = url.match(REGEX_EPISODE_ID);
     return match ? match[1] : null;
+}
+
+/**
+ * Extract the podcast ID from the URL
+ * @param {string} url
+ * @returns {string}
+ */
+function extractPodcastId(url) {
+    // Regular expression to match the podcast ID in the URL
+    const regex = /\/id(\d+)/;
+    
+    // Match the URL against the regex
+    const match = url.match(regex);
+    
+    // If a match is found, return the podcast ID (without the 'id' prefix)
+    if (match) {
+        return match[1];
+    }
+    
+    // If no match is found, return null
+    return null;
 }
 
 /**

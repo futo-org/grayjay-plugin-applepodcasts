@@ -60,12 +60,7 @@ source.enable = function(conf, settings, savedState){
 	  
 		try {
 		  if (savedState) {
-			const saveState = JSON.parse(savedState);
-			if (saveState) {
-			  Object.keys(state).forEach((key) => {
-				state[key] = saveState[key];
-			  });
-			}
+			state = JSON.parse(savedState);
 			didSaveState = true;
 		  }
 		} catch (ex) {
@@ -115,7 +110,7 @@ source.getHome = function () {
     class RecommendedVideoPager extends VideoPager {
         constructor({ media = [], hasMore = true, context = { requestPath } } = {}) {
             super(media, hasMore, context);
-            this.url = `${PLATFORM_BASE_URL_API}/${context.requestPath}&${API_GET_TRENDING_EPISODES_URL_QUERY_PARAMS}`;
+            this.url = `${PLATFORM_BASE_URL_API}${context.requestPath}&${API_GET_TRENDING_EPISODES_URL_QUERY_PARAMS}`;
         }
 
         nextPage() {

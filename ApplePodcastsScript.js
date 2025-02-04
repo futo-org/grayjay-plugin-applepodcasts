@@ -69,7 +69,7 @@ source.enable = function(conf, settings, savedState){
 	  
 		if (!didSaveState) {
 		  // init state
-		  const indexRes = http.GET(PLATFORM_BASE_URL, {});
+		  const indexRes = http.GET(PLATFORM_BASE_URL, { 'User-Agent': config.authentication.userAgent });
 		  if(!indexRes.isOk) {
 			  throw new ScriptException("Failed to get index page [" + indexRes.code + "]");
 		  }
@@ -82,7 +82,7 @@ source.enable = function(conf, settings, savedState){
 		  }
 		  
 		  // Get the main script file content
-		  const scriptRes = http.GET(`${PLATFORM_BASE_ASSETS_URL}${scriptFileName}`, {});
+		  const scriptRes = http.GET(`${PLATFORM_BASE_ASSETS_URL}${scriptFileName}`, {'User-Agent': config.authentication.userAgent });
 		  if(!scriptRes.isOk) {
 			  throw new ScriptException(`Failed to get script file ${scriptFileName} [" ${scriptRes.code } "]`);
 		  }
@@ -104,7 +104,7 @@ source.enable = function(conf, settings, savedState){
 
 source.getHome = function () {
 
-    const selectedCountry = COUNTRY_CODES[_settings.countryIndex];
+    const selectedCountry = COUNTRY_CODES[_settings.countryIndex] ?? 'us';
     const requestPath = API_GET_TRENDING_EPISODES_URL_PATH_TEMPLATE.replace("{country}", selectedCountry);
 
     class RecommendedVideoPager extends VideoPager {
@@ -199,7 +199,7 @@ source.getSearchChannelContentsCapabilities = function () {
 };
 source.searchChannels = function(query) {
 	const url = API_SEARCH_PODCASTS_URL_TEMPLATE.replace("{query}", query);
-	const resp = http.GET(url, {});
+	const resp = http.GET(url, state.headers);
 	if(!resp.isOk)
 		throw new ScriptException("Failed to get search results [" + resp.code + "]");
 	const result = JSON.parse(resp.body);
@@ -222,7 +222,7 @@ source.getChannel = function(url) {
 		return state.channel[podcastId];
 	}
 
-	const resp = http.GET(url, {});
+	const resp = http.GET(url, state.headers);
 	if(!resp.isOk)
 		throw new ScriptException("Failed to get channel [" + resp.code + "]");
 

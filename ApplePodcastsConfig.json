@@ -7,7 +7,7 @@
     "repositoryUrl": "https://gitlab.futo.org/videostreaming/plugins/apple-podcasts",
     "sourceUrl": "https://plugins.grayjay.app/ApplePodcasts/ApplePodcastsConfig.json",
     "scriptUrl": "./ApplePodcastsScript.js",
-    "version": 10,
+    "version": 11,
     "iconUrl": "./ApplePodcastsIcon.png",
     "id": "89ae4889-0420-4d16-ad6c-19c776b28f99",
     "subscriptionRateLimit": 10,
@@ -215,5 +215,10 @@
             "media-user-token"
         ],
         "userAgent": "Mozilla/5.0 (iPad; CPU OS 14_7_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.2 Mobile/15E148 Safari/604.1"
+    },
+    "changelog": {
+        "11" : [
+            "Use container type as source name;"
+        ]
     }
 }

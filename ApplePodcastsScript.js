@@ -505,7 +505,7 @@ function getVideoSource(episodeData) {
 		case "audio":
 			return new UnMuxVideoSourceDescriptor([], [
 				new AudioUrlSource({
-					name: "Podcast",
+					name: "audio/mp3",
 					container: "audio/mp3",
 					bitrate: 0,
 					url: episodeData.attributes.assetUrl,
@@ -515,7 +515,7 @@ function getVideoSource(episodeData) {
 		case "video":
 			return new VideoSourceDescriptor([
 				new VideoUrlSource({
-					name: "Podcast",
+					name: "video/mp4",
 					container: "video/mp4",
 					url: episodeData.attributes.assetUrl,
 				})

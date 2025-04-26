@@ -10,6 +10,7 @@ const API_SEARCH_PODCASTS_URL_TEMPLATE = 'https://itunes.apple.com/search?media=
 const API_GET_PODCAST_EPISODES_URL_TEMPLATE = 'https://amp-api.podcasts.apple.com/v1/catalog/{country}/podcasts/{podcast-id}/episodes?l=en-US&offset={offset}';
 const API_GET_EPISODE_DETAILS_URL_TEMPLATE = 'https://amp-api.podcasts.apple.com/v1/catalog/{country}/podcast-episodes/{episode-id}?include=channel,podcast&include[podcasts]=episodes,podcast-seasons,trailers&include[podcast-seasons]=episodes&fields=artistName,artwork,assetUrl,contentRating,description,durationInMilliseconds,episodeNumber,guid,isExplicit,kind,mediaKind,name,offers,releaseDateTime,season,seasonNumber,storeUrl,summary,title,url&with=entitlements&l=en-US';
 const API_GET_PUBLISHER_CHANNEL_PODCASTS_URL_TEMPLATE = 'https://amp-api.podcasts.apple.com/v1/catalog/{country}/podcast-channels/{channel-id}/view/top-shows?l=en-US&offset={offset}&extend[podcast-channels]=isSubscribed,subscriptionOffers,title&include[podcasts]=channel&include[podcast-episodes]=channel,podcast&limit=20&with=entitlements';
+const API_GET_PUBLISHER_CHANNEL_EPISODES_URL_TEMPLATE = 'https://amp-api.podcasts.apple.com/v1/catalog/{country}/podcast-channels/{channel-id}/view/top-episodes?l=en-US&offset={offset}&extend[podcast-channels]=isSubscribed,subscriptionOffers,title&include[podcasts]=channel&include[podcast-episodes]=channel,podcast&limit=20&with=entitlements';
 
 const API_GET_TRENDING_EPISODES_URL_PATH_TEMPLATE = '/v1/catalog/{country}/charts?chart=top&genre=26&l=en-US&limit=10&offset=0&types=podcast-episodes'
 const API_GET_TRENDING_EPISODES_URL_QUERY_PARAMS = 'extend[podcasts]=editorialArtwork,feedUrl&include[podcast-episodes]=podcast&types=podcast-episodes&with=entitlements';
@@ -272,8 +273,7 @@ source.getChannel = function(url) {
 source.getChannelContents = function(url, type, order, filters, isPlaylist) {
     // Check if it's a publisher channel URL
     if (REGEX_PUBLISHER_CHANNEL_URL.test(url)) {
-        // Return empty pager for publisher channels
-        return new ContentPager([], false);
+        return new ApplePublisherChannelEpisodesPager(url);
     }
     
     // Otherwise, handle regular podcast channels
@@ -882,6 +882,49 @@ class PodcastEpisodesPlaylistPager extends PlaylistPager {
         this.hasMore = false;
         return this;
     }
+}
+
+class ApplePublisherChannelEpisodesPager extends ContentPager {
+    constructor(url) {
+        const match = url.match(REGEX_PUBLISHER_CHANNEL_URL);
+        if (!match) {
+            super([], false);
+            return;
+        }
+        
+        const countryCode = match[1] || COUNTRY_CODES[_settings.countryIndex] || 'us';
+        const channelId = match[3];
+        
+        super(fetchPublisherChannelEpisodesPage(channelId, 0, countryCode), true);
+        this.channelId = channelId;
+        this.countryCode = countryCode;
+        this.offset = 20; // Start next page at offset 20
+    }
+
+    nextPage() {
+        this.results = fetchPublisherChannelEpisodesPage(this.channelId, this.offset, this.countryCode);
+        this.hasMore = this.results.length > 0;
+        this.offset += 20; // Increment offset for the next page
+        return this;
+    }
+}
+
+function fetchPublisherChannelEpisodesPage(channelId, offset=0, countryCode='us') {
+    const apiUrl = API_GET_PUBLISHER_CHANNEL_EPISODES_URL_TEMPLATE
+        .replace('{country}', countryCode)
+        .replace('{channel-id}', channelId)
+        .replace('{offset}', offset);
+    
+    const resp = http.GET(apiUrl, state.headers);
+    if (!resp.isOk) {
+        return [];
+    }
+    
+    const episodesData = JSON.parse(resp.body);
+    
+    return (episodesData.data || [])
+        .map(episode => podcastToPlatformVideo(episode))
+        .filter(Boolean);
 }
 
 log("LOADED");

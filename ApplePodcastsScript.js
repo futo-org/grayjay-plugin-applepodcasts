@@ -21,6 +21,7 @@ const API_GET_SAVED_EPISODES_FIRST_PAGE_PATH = '/v1/me/library/podcast-episodes?
 const REGEX_CONTENT_URL = /https:\/\/podcasts\.apple\.com\/[a-zA-Z]*\/podcast\/.*?\/id([0-9]*)\?i=([0-9]*).*?/s
 const REGEX_CHANNEL_URL = /https:\/\/podcasts\.apple\.com\/[a-zA-Z]{2}\/podcast(?:\/[^/]+)?\/(?:id)?([0-9]+)/si;
 const REGEX_CHANNEL_SHOW = /<script id=schema:show type="application\/ld\+json">(.*?)<\/script>/s
+const REGEX_CHANNEL_SERVER_DATA = /<script\s+(?:[^>]*?\s+)?(?:id=["']serialized-server-data["']\s+type=["']application\/(?:ld\+)?json["']|type=["']application\/(?:ld\+)?json["']\s+id=["']serialized-server-data["'])\s*>(.*?)<\/script>/s;
 const REGEX_EPISODE = /<script name="schema:podcast-episode" type="application\/ld\+json">(.*?)<\/script>/s
 const REGEX_EPISODE_ID = /[?&]i=([^&]+)/;
 const REGEX_IMAGE = /<meta property="og:image" content="(.*?)">/s
@@ -253,18 +254,84 @@ source.getChannel = function(url) {
     }
     const showData = JSON.parse(showMatch[1]);
 
+	const serverDataMatch = resp.body.match(REGEX_CHANNEL_SERVER_DATA);
+	let serverData;
+	if(serverDataMatch && serverDataMatch.length == 2) {
+		serverData = JSON.parse(serverDataMatch[1]);
+	}
+
+	let description = showData.description ?? '';
+	const links = {};
+
+	let items = serverData?.[0]?.data?.shelves?.find(x => x.contentType === 'showHeaderRegular')?.items?.[0];
+	const informationItems = serverData?.[0]?.data?.shelves?.find(x => x.contentType === "information")?.items;
+
+	let metaObj;
+
+	try {
+		metaObj = (items?.metadata ?? []).reduce((acc, item) => {
+			const [key] = Object.keys(item);
+			acc[key] = item[key];
+			return acc;
+		}, {});
+	} catch(e) {
+		log(`failed to parse metadata: ${e}`);
+	}
+
+	if(informationItems?.length) {
+		
+		const websiteItem = informationItems.find(item => item.title === 'Show Website');
+		
+		if(websiteItem) {
+			links.website = websiteItem.action.url;
+		}
+
+		const episodeCount = informationItems.find(item => item.id === 'InformationShelfEpisodeCount');
+		if(episodeCount) {
+			description += `<p>${episodeCount.title}: ${episodeCount.description}</p>`;
+		}
+
+		const yearActive = informationItems.find(item => item.title === 'Years Active');
+		if(episodeCount) {
+			description += `<p>${yearActive.title}: ${yearActive.description}</p>`;
+		}
+	}
+
+	if(metaObj?.category) {
+		const category = metaObj?.category?.title ?? metaObj?.category ?? '';
+		if(category) {
+			description += `<p>Category: ${category}</p>`;
+		}
+	}
+
+	if(metaObj?.explicit) {
+		description += `<p>Explicit: ${metaObj.explicit ? 'Yes' : 'No'}</p>`;
+	};
+
+	if(metaObj?.updateFrequency) {
+		description += `<p>Update Frequency: ${metaObj.updateFrequency}</p>`;
+	}
+
+	if(metaObj?.ratings?.ratingAverage) {
+		description += `<p>Average Rating: ${metaObj?.ratings?.ratingAverage ?? 0} (votes: ${metaObj?.ratings?.totalNumberOfRatings ?? 0})</p>`;
+	}
+
+	if(items?.providerAction?.title && items?.providerAction?.pageUrl) {
+		description += `<p>Publishing Channel: <a href="${items.providerAction.pageUrl}">${items.providerAction.title}</a></p>`;
+	}
+
     const banner = matchFirstOrDefault(resp.body, REGEX_IMAGE);
     // save channel info to state (cache)
     state.channel[podcastId] = new PlatformChannel({
         id: new PlatformID(PLATFORM, podcastId, config.id, undefined),
         name: showData.name,
         thumbnail: banner,
-        banner: banner,
+        banner,
         subscribers: -1,
-        description: showData.description,
+        description,
         url: removeQuery(url),
         urlAlternatives: [removeQuery(url)],
-        links: {}
+        links
     });
 
     return state.channel[podcastId];

@@ -269,7 +269,7 @@ source.getChannel = function(url) {
     return state.channel[podcastId];
 };
 
-source.getChannelContents = function(url, isPlaylist) {
+source.getChannelContents = function(url, type, order, filters, isPlaylist) {
     // Check if it's a publisher channel URL
     if (REGEX_PUBLISHER_CHANNEL_URL.test(url)) {
         // Return empty pager for publisher channels
@@ -441,8 +441,7 @@ source.getPlaylist = function (url) {
 
 		const isPlaylist = true;
 
-		log(`isPlaylist: ${isPlaylist}`);
-		const episodesPager = source.getChannelContents(url, isPlaylist);
+		const episodesPager = source.getChannelContents(url, null, null, null, isPlaylist);
 
 		return new PlatformPlaylistDetails({
 			url: url,
@@ -869,4 +868,5 @@ class PodcastEpisodesPlaylistPager extends PlaylistPager {
         return this;
     }
 }
-console.log("LOADED");
+
+log("LOADED");

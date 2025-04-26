@@ -122,21 +122,7 @@ source.getHome = function () {
             const episodes = JSON.parse(resp.body)?.results?.['podcast-episodes']?.find(x => x.chart == "top");
 
             const contents = (episodes?.data ?? [])
-                .map(x => {
-                    const podcast = x.relationships?.podcast?.data?.find(p => p.type == 'podcasts');
-                    const podcastAttributes = podcast?.attributes;
-                    return new PlatformVideo({
-                        id: new PlatformID(PLATFORM, x.id + "", config?.id),
-                        name: x.attributes.itunesTitle ?? x.attributes.name ?? '',
-                        thumbnails: new Thumbnails([new Thumbnail(getArtworkUrl(x.attributes.artwork.url), 0)]),
-                        author: new PlatformAuthorLink(new PlatformID(PLATFORM, podcast.id, config.id, undefined), podcastAttributes?.name, podcastAttributes.url, getArtworkUrl(podcastAttributes.artwork.url) ?? ""),
-                        uploadDate: parseInt(new Date(x.attributes.releaseDateTime).getTime() / 1000),
-                        duration: x.attributes.durationInMilliseconds / 1000,
-                        viewCount: -1,
-                        url: x.attributes.url,
-                        isLive: false
-                    })
-                })
+                .map(x => podcastToPlatformVideo(x))
                 .sort((a, b) => b.datetime - a.datetime);
 
             return new RecommendedVideoPager({
@@ -164,29 +150,14 @@ source.getSearchCapabilities = () => {
 source.search = function (query, type, order, filters) {
 	const url = API_SEARCH_URL_TEMPLATE.replace("{0}", query);
 	const resp = http.GET(url, state.headers);
-	
+
 	if(!resp.isOk)
 		throw new ScriptException("Failed to get search results [" + resp.code + "]");
 	const result = JSON.parse(resp.body);
 	
 	const results = result.results.groups
-	.find(x=>x.groupId == "episode")?.data
-	.map(x=>{
-		
-	const podcast = x.relationships?.podcast?.data?.find(p => p.type == 'podcasts');
-	const podcastAttributes = podcast?.attributes;
-
-	return new PlatformVideo({
-		id: new PlatformID(PLATFORM, x.id + "", config?.id),
-		name: x?.attributes?.name ?? '',
-		thumbnails: new Thumbnails([new Thumbnail(getArtworkUrl(x.attributes.artwork.url), 0)]),
-		author: new PlatformAuthorLink(new PlatformID(PLATFORM, podcast.id, config.id, undefined), podcastAttributes?.name ?? '', podcastAttributes.url, getArtworkUrl(podcastAttributes.artwork.url) ?? ""),
-		uploadDate: parseInt(new Date(x.attributes.releaseDateTime).getTime() / 1000),
-		duration: x.attributes.durationInMilliseconds / 1000,
-		viewCount: -1,
-		url: x.attributes.url,
-		isLive: false
-	})});
+	.find(x => x.groupId == "episode")?.data
+	.map(x => podcastToPlatformVideo(x));
 
 	return new ContentPager(results, false);
 };
@@ -285,21 +256,7 @@ function fetchEpisodesPage(id, offset=0, countryCode='us') {
 
 	const episodes = JSON.parse(resp.body);
 
-	return episodes.data.map(x=> { 
-
-		return new PlatformVideo({
-		id: new PlatformID(PLATFORM, "" + x.id, config?.id),
-		name: x.attributes.name,
-		thumbnails: new Thumbnails([new Thumbnail(getArtworkUrl(x.attributes.artwork.url), 0)]),
-		author: author,
-		uploadDate: parseInt(new Date(x.attributes.releaseDateTime).getTime() / 1000),
-		duration: parseInt(x.attributes.durationInMilliseconds / 1000),
-		viewCount: -1,
-		url: x.attributes.url,
-		isLive: false,
-		description: x.attributes.description.standard,
-		video: getVideoSource(x)
-	})});
+	return episodes.data.map(x => podcastToPlatformVideo(x, author));
 }
 
 //Video
@@ -430,25 +387,7 @@ source.getPlaylist = function (url) {
 			  
 		  } while(hasMore);
 
-		  const all = playlistItems.map(x => {
-			const podcast = x?.relationships?.podcast?.data?.find(p => p.type == 'podcasts');
-
-			const podcastId = podcast?.id ?? extractPodcastId(x.attributes.url) ?? '';
-
-			const podcastAttributes = podcast?.attributes;
-
-			return new PlatformVideo({
-				id: new PlatformID(PLATFORM, x?.id ?? '', config?.id),
-				name: x.attributes.itunesTitle ?? x.attributes.name ?? '',
-				thumbnails: new Thumbnails([new Thumbnail(getArtworkUrl(x.attributes.artwork.url), 0)]),
-				author: new PlatformAuthorLink(new PlatformID(PLATFORM, podcastId, config.id, undefined), podcastAttributes?.name ?? '', podcastAttributes?.url ?? '', podcastAttributes?.artwork?.url ? getArtworkUrl(podcastAttributes.artwork.url) : ''),
-				uploadDate: parseInt(new Date(x.attributes.releaseDateTime).getTime() / 1000),
-				duration: x.attributes.durationInMilliseconds / 1000,
-				viewCount: -1,
-				url: x.attributes.url,
-				isLive: false
-			})
-		})
+		  const all = playlistItems.map(x => podcastToPlatformVideo(x))
 		.filter(x => x != null)
 		.sort((a, b) => b.datetime - a.datetime);
 
@@ -658,6 +597,52 @@ function loadOptionsForSetting(settingKey) {
 function extractCountryCode(url) {
     const match = url.match(REGEX_COUNTRY_CODE);
     return match ? match[1] : null; // Returns the country code or null if not found
+}
+
+function podcastToPlatformVideo(x, author) {
+	const podcast = x.relationships?.podcast?.data?.find(p => p.type == 'podcasts');
+	const podcastAttributes = podcast?.attributes;
+
+	let durationInMilliseconds = x.attributes.durationInMilliseconds;
+
+	let isSubscriberOnly = false;
+
+	if (!durationInMilliseconds) {
+		isSubscriberOnly = (x?.attributes?.offers ?? []).some(e => e.kind == 'subscribe');
+	}
+
+	let duration = durationInMilliseconds ? durationInMilliseconds / 1000 : 0;
+
+	if (!author) {
+		author = new PlatformAuthorLink(new PlatformID(PLATFORM, podcast.id, config.id, undefined), podcastAttributes?.name, podcastAttributes.url, getArtworkUrl(podcastAttributes.artwork.url) ?? "");
+	}
+
+	const id = new PlatformID(PLATFORM, x.id + "", config?.id);
+	const name = x.attributes.itunesTitle ?? x.attributes.name ?? '';
+	const uploadDate = parseInt(new Date(x.attributes.releaseDateTime).getTime() / 1000);
+
+	if (isSubscriberOnly) {
+		return new PlatformLockedContent({
+			id,
+			name,
+			author,
+			datetime: uploadDate,
+			lockDescription: 'Subscriber only content',
+			unlockUrl: 'https://support.apple.com/en-us/108378',
+		});
+	}
+
+	return new PlatformVideo({
+		id,
+		name,
+		thumbnails: new Thumbnails([new Thumbnail(getArtworkUrl(x.attributes.artwork.url), 0)]),
+		author,
+		uploadDate,
+		duration: duration,
+		viewCount: -1,
+		url: x.attributes.url,
+		isLive: false
+	})
 }
 
 console.log("LOADED");

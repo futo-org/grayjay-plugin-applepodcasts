@@ -231,7 +231,8 @@
             "feature: show subscriber only episodes as such;",
             "feature: add setting to hide subscriber only episodes;",
             "feature: add playlists tab to podcast channels;",
-            "feature: add support for publisher channels containing multiple podcasts in the channel playlists tabs"
+            "feature: add support for publisher channels containing multiple podcasts in the channel playlists tabs;",
+            "feature: add link to publisher channel in episode description if available;"
         ]
     }
 }

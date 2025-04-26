@@ -369,6 +369,21 @@ source.getContentDetails = function(url) {
 	}
 
 	const podcastData = episodeData.relationships.podcast.data.find(r => r.type == 'podcasts');	
+	
+	const channel = episodeData?.relationships?.channel?.data?.[0];
+
+	let description = episodeData.attributes.description?.standard ?? '';
+	
+	if(channel) {
+		
+		if(channel?.attributes?.url && channel?.attributes?.name)
+		{
+			description += `<br><p>Publishing Channel: <a href="${channel?.attributes?.url}">${channel?.attributes?.name}</a></p>`;
+		}
+		else if(channel?.attributes?.name) {
+			description += `<br><p>Publishing Channel: ${channel?.attributes?.name}</p>`;
+		}
+	}
 
 	return new PlatformVideoDetails({
 		id: new PlatformID(PLATFORM, episodeData.id, config?.id),
@@ -380,7 +395,7 @@ source.getContentDetails = function(url) {
 		viewCount: -1,
 		url: episodeData.attributes.url,
 		isLive: false,
-		description: episodeData.attributes.description.standard,
+		description: description,
 		video: getVideoSource(episodeData)
 	});
 };

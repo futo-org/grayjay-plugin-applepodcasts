@@ -7,7 +7,7 @@
     "repositoryUrl": "https://gitlab.futo.org/videostreaming/plugins/apple-podcasts",
     "sourceUrl": "https://plugins.grayjay.app/ApplePodcasts/ApplePodcastsConfig.json",
     "scriptUrl": "./ApplePodcastsScript.js",
-    "version": 11,
+    "version": 12,
     "iconUrl": "./ApplePodcastsIcon.png",
     "id": "89ae4889-0420-4d16-ad6c-19c776b28f99",
     "subscriptionRateLimit": 10,
@@ -226,6 +226,10 @@
     "changelog": {
         "11" : [
             "Use container type as source name;"
+        ],
+        "12" : [
+            "feature: show subscriber only episodes as such;",
+            "feature: add setting to hide subscriber only episodes;"
         ]
     }
 }

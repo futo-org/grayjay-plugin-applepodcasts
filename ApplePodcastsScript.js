@@ -9,6 +9,7 @@ const API_SEARCH_URL_TEMPLATE = 'https://amp-api.podcasts.apple.com/v1/catalog/u
 const API_SEARCH_PODCASTS_URL_TEMPLATE = 'https://itunes.apple.com/search?media=podcast&term={query}';
 const API_GET_PODCAST_EPISODES_URL_TEMPLATE = 'https://amp-api.podcasts.apple.com/v1/catalog/{country}/podcasts/{podcast-id}/episodes?l=en-US&offset={offset}';
 const API_GET_EPISODE_DETAILS_URL_TEMPLATE = 'https://amp-api.podcasts.apple.com/v1/catalog/{country}/podcast-episodes/{episode-id}?include=channel,podcast&include[podcasts]=episodes,podcast-seasons,trailers&include[podcast-seasons]=episodes&fields=artistName,artwork,assetUrl,contentRating,description,durationInMilliseconds,episodeNumber,guid,isExplicit,kind,mediaKind,name,offers,releaseDateTime,season,seasonNumber,storeUrl,summary,title,url&with=entitlements&l=en-US';
+const API_GET_PUBLISHER_CHANNEL_PODCASTS_URL_TEMPLATE = 'https://amp-api.podcasts.apple.com/v1/catalog/{country}/podcast-channels/{channel-id}/view/top-shows?l=en-US&offset={offset}&extend[podcast-channels]=isSubscribed,subscriptionOffers,title&include[podcasts]=channel&include[podcast-episodes]=channel,podcast&limit=20&with=entitlements';
 
 const API_GET_TRENDING_EPISODES_URL_PATH_TEMPLATE = '/v1/catalog/{country}/charts?chart=top&genre=26&l=en-US&limit=10&offset=0&types=podcast-episodes'
 const API_GET_TRENDING_EPISODES_URL_QUERY_PARAMS = 'extend[podcasts]=editorialArtwork,feedUrl&include[podcast-episodes]=podcast&types=podcast-episodes&with=entitlements';
@@ -26,6 +27,7 @@ const REGEX_CANONICAL_URL = /<link rel="canonical" href="(https:\/\/podcasts.app
 const REGEX_MAIN_SCRIPT_FILENAME = /index-\w+\.js/;
 const REGEX_JWT = /\beyJhbGci[A-Za-z0-9-_]+?\.[A-Za-z0-9-_]+?\.[A-Za-z0-9-_]{43,}\b/;
 const REGEX_COUNTRY_CODE = /^https:\/\/podcasts\.apple\.com\/([a-z]{2})\//;
+const REGEX_PUBLISHER_CHANNEL_URL = /https:\/\/podcasts\.apple\.com\/([a-z]{2})\/channel\/([^\/]+)\/(?:id)?([0-9]+)/si;
 
 const SAVED_EPISODES_KEY  = 'applepodcasts:playlist:savedepisodes';
 
@@ -190,66 +192,129 @@ source.searchChannels = function(query) {
 
 //Channel
 source.isChannelUrl = function(url) {
-	return REGEX_CHANNEL_URL.test(url);
+	return REGEX_CHANNEL_URL.test(url) || REGEX_PUBLISHER_CHANNEL_URL.test(url);
 };
+
 source.getChannel = function(url) {
-	const matchUrl = url.match(REGEX_CHANNEL_URL);
+    // Check if it's a publisher channel URL
+    const publisherMatch = url.match(REGEX_PUBLISHER_CHANNEL_URL);
+    if (publisherMatch) {
+        const countryCode = publisherMatch[1];
+        const channelId = publisherMatch[3];
+        
+        // If already cached, return it
+        if (state.channel[channelId]) {
+            return state.channel[channelId];
+        }
+        
+        const apiUrl = `https://amp-api.podcasts.apple.com/v1/catalog/${countryCode}/podcast-channels/${channelId}?l=en-US`;
+        const resp = http.GET(apiUrl, state.headers);
+        
+        if (!resp.isOk) {
+            throw new ScriptException("Failed to get publisher channel [" + resp.code + "]");
+        }
+        
+        const channelData = JSON.parse(resp.body).data[0];
+        const attributes = channelData.attributes;
+        
+        state.channel[channelId] = new PlatformChannel({
+            id: new PlatformID(PLATFORM, channelId, config.id, undefined),
+            name: attributes.name,
+            thumbnail: getArtworkUrl(attributes.artwork.url),
+            banner: attributes.logoArtwork ? getArtworkUrl(attributes.logoArtwork.url) : null,
+            subscribers: -1,
+            description: attributes.description?.standard || '',
+            url: url,
+            urlAlternatives: [url],
+            links: { website: attributes.websiteUrl || '' }
+        });
+        
+        return state.channel[channelId];
+    }
+    
+    // Regular podcast channel handling
+    const matchUrl = url.match(REGEX_CHANNEL_URL);
+    const podcastId = matchUrl[1];
 
-	const podcastId = matchUrl[1];
+    // check if channel is cached and return it
+    if(state.channel[podcastId]) {
+        return state.channel[podcastId];
+    }
 
-	// check if channel is cached and return it
-	if(state.channel[podcastId]) {
-		return state.channel[podcastId];
-	}
+    const resp = http.GET(url, state.headers);
+    if(!resp.isOk)
+        throw new ScriptException("Failed to get channel [" + resp.code + "]");
 
-	const resp = http.GET(url, state.headers);
-	if(!resp.isOk)
-		throw new ScriptException("Failed to get channel [" + resp.code + "]");
+    const showMatch = resp.body.match(REGEX_CHANNEL_SHOW);
+    if(!showMatch || showMatch.length != 2) {
+        console.log("No show data", resp.body);
+        throw new ScriptException("Could not find show data");
+    }
+    const showData = JSON.parse(showMatch[1]);
 
-	const showMatch = resp.body.match(REGEX_CHANNEL_SHOW);
-	if(!showMatch || showMatch.length != 2) {
-		console.log("No show data", resp.body);
-		throw new ScriptException("Could not find show data");
-	}
-	const showData = JSON.parse(showMatch[1]);
+    const banner = matchFirstOrDefault(resp.body, REGEX_IMAGE);
+    // save channel info to state (cache)
+    state.channel[podcastId] = new PlatformChannel({
+        id: new PlatformID(PLATFORM, podcastId, config.id, undefined),
+        name: showData.name,
+        thumbnail: banner,
+        banner: banner,
+        subscribers: -1,
+        description: showData.description,
+        url: removeQuery(url),
+        urlAlternatives: [removeQuery(url)],
+        links: {}
+    });
 
-	const banner = matchFirstOrDefault(resp.body, REGEX_IMAGE);
-	// save channel info to state (cache)
-	state.channel[podcastId] = new PlatformChannel({
-		id: new PlatformID(PLATFORM, podcastId, config.id, undefined),
-		name: showData.name,
-		thumbnail: banner,
-		banner: banner,
-		subscribers: -1,
-		description: showData.description,
-		url: removeQuery(url),
-		urlAlternatives: [removeQuery(url)],
-		links: {}
-	});
-
-	return state.channel[podcastId];
+    return state.channel[podcastId];
 };
 
-source.getChannelContents = function(url) {
-	const id = removeRemainingQuery(url.match(REGEX_CHANNEL_URL)[1]);
-	return new AppleChannelContentPager(id, extractCountryCode(url));
+source.getChannelContents = function(url, isPlaylist) {
+    // Check if it's a publisher channel URL
+    if (REGEX_PUBLISHER_CHANNEL_URL.test(url)) {
+        // Return empty pager for publisher channels
+        return new ContentPager([], false);
+    }
+    
+    // Otherwise, handle regular podcast channels
+    const id = removeRemainingQuery(url.match(REGEX_CHANNEL_URL)[1]);
+    return new AppleChannelContentPager(id, extractCountryCode(url), isPlaylist);
 };
+
+source.getChannelPlaylists = function(url) {
+    // Check if it's a publisher channel URL
+    if (REGEX_PUBLISHER_CHANNEL_URL.test(url)) {
+        return new PublisherChannelPlaylistsPager(url);
+    }
+    
+    // Check if it's a regular podcast channel URL
+    if (REGEX_CHANNEL_URL.test(url)) {
+        return new PodcastEpisodesPlaylistPager(url);
+    }
+    
+    // For other URLs, return empty pager
+    return new PlaylistPager([], false);
+};
+
 class AppleChannelContentPager extends ContentPager {
-	constructor(id, countryCode) {
-		super(fetchEpisodesPage(id, 0, countryCode), true);
+	constructor(id, countryCode, isPlaylist) {
+		super(fetchEpisodesPage(id, 0, countryCode, isPlaylist), true);
 		this.offset = this.results.length;
 		this.id = id;
 		this.countryCode = countryCode;
+		this.isPlaylist = isPlaylist;
+		
 	}
 
 	nextPage() {
 		this.offset += 10;
-		this.results = fetchEpisodesPage(this.id, this.offset, this.countryCode);
+		
+		this.results = fetchEpisodesPage(this.id, this.offset, this.countryCode, this.isPlaylist);
 		this.hasMore = this.results.length > 0;
 		return this;
 	}
 }
-function fetchEpisodesPage(id, offset=0, countryCode='us') {
+function fetchEpisodesPage(id, offset=0, countryCode='us', isPlaylist=false) {
 	const urlEpisodes = API_GET_PODCAST_EPISODES_URL_TEMPLATE
 	.replace("{country}", countryCode)
 	.replace("{podcast-id}", id)
@@ -264,9 +329,8 @@ function fetchEpisodesPage(id, offset=0, countryCode='us') {
 	const author = new PlatformAuthorLink(new PlatformID(PLATFORM, id, config.id, undefined), channel.name, URL_CHANNEL + id, channel.thumbnail);
 
 	const episodes = JSON.parse(resp.body);
-
 	return episodes.data
-	.map(x => podcastToPlatformVideo(x, author))
+	.map(x => podcastToPlatformVideo(x, author, isPlaylist))
 	.filter(Boolean)
 }
 
@@ -358,8 +422,8 @@ source.getUserSubscriptions = () => {
 }
 
 source.isPlaylistUrl = function(url) {
-	// currently only playlists are saved episodes
-	return url == SAVED_EPISODES_KEY;
+    // Return true for saved episodes or podcast URLs
+    return url == SAVED_EPISODES_KEY || REGEX_CHANNEL_URL.test(url);
 }
 
 source.getUserPlaylists = function () {
@@ -368,46 +432,69 @@ source.getUserPlaylists = function () {
 }
 
 source.getPlaylist = function (url) {
-	// currently only playlists are saved episodes
-	if(url == SAVED_EPISODES_KEY) {
-		
+	// Check if it's a podcast URL
+	if (REGEX_CHANNEL_URL.test(url)) {
+		const id = removeRemainingQuery(url.match(REGEX_CHANNEL_URL)[1]);
+
+		// Get the podcast metadata
+		const channel = source.getChannel(url);
+
+		const isPlaylist = true;
+
+		log(`isPlaylist: ${isPlaylist}`);
+		const episodesPager = source.getChannelContents(url, isPlaylist);
+
+		return new PlatformPlaylistDetails({
+			url: url,
+			id: new PlatformID(PLATFORM, id, config.id),
+			author: new PlatformAuthorLink(
+				new PlatformID(PLATFORM, id, config.id),
+				channel.name,
+				channel.url,
+				channel.thumbnail
+			),
+			name: channel.name,
+			thumbnail: channel.thumbnail,
+			// videoCount: episodes.length,
+			contents: episodesPager,
+		});
+	}
+
+	// Handle saved episodes as before
+	if (url == SAVED_EPISODES_KEY) {
+
 		if (!bridge.isLoggedIn()) {
 			log('Failed to retrieve subscriptions page because not logged in.');
 			throw new ScriptException('Not logged in');
-		  }
-	  
-		  let next = API_GET_SAVED_EPISODES_FIRST_PAGE_PATH;
-		  let hasMore = false;
-		  const playlistItems = [];
-	  
-		  do {
-	  
-			  const resp = http.GET(`${PLATFORM_BASE_URL_API}${next}`, state.headers , true);
-	  
-			  if(!resp.isOk)
-				  return [];
-	  
-			  const podcasts = JSON.parse(resp.body);
-	  
-			  podcasts.data.forEach(podcast => {
-				  playlistItems.push(podcast);
-			  });
-	  
-			  hasMore = !!podcasts.next;
-			  next = podcasts.next;
-			  
-		  } while(hasMore);
+		}
 
-		  const all = playlistItems
-		  .map(x => podcastToPlatformVideo(x))
-		  .filter(Boolean)
-		  .sort((a, b) => b.datetime - a.datetime);
+		let next = API_GET_SAVED_EPISODES_FIRST_PAGE_PATH;
+		let hasMore = false;
+		const playlistItems = [];
 
+		do {
 
+			const resp = http.GET(`${PLATFORM_BASE_URL_API}${next}`, state.headers, true);
+
+			if (!resp.isOk)
+				return [];
+
+			const podcasts = JSON.parse(resp.body);
+
+			podcasts.data.forEach(podcast => {
+				playlistItems.push(podcast);
+			});
+
+			hasMore = !!podcasts.next;
+			next = podcasts.next;
+
+		} while (hasMore);
+		const all = playlistItems
+			.map(x => podcastToPlatformVideo(x, null, true))
+			.filter(Boolean)
+			.sort((a, b) => b.datetime - a.datetime);
 		const thumbnailUrl = all.length ? (all?.[0]?.thumbnails?.sources?.[0].url ?? '') : '';
-
 		const savedEpisodesPlaylistUrl = PLATFORM_SAVED_EPISODES_URL.replace("{country}", COUNTRY_CODES[_settings.countryIndex]);
-
 		return new PlatformPlaylistDetails({
 			url: savedEpisodesPlaylistUrl,
 			id: new PlatformID(PLATFORM, 'playlistid', config.id),
@@ -415,16 +502,16 @@ source.getPlaylist = function (url) {
 				new PlatformID(PLATFORM, '', config.id),
 				'',// author name
 				'',// author url
-			  ),
+			),
 			name: 'Saved Episodes',// playlist name
 			thumbnail: thumbnailUrl,
 			videoCount: all.length,
 			contents: new VideoPager(all),
 		});
-				
-	} else {
-		throw new ScriptException('Invalid playlist url');
+
 	}
+
+	throw new ScriptException('Invalid playlist url');
 }
 
 /**
@@ -611,7 +698,7 @@ function extractCountryCode(url) {
     return match ? match[1] : null; // Returns the country code or null if not found
 }
 
-function podcastToPlatformVideo(x, author) {
+function podcastToPlatformVideo(x, author, isPlaylistParent = false) {
 	const podcast = x.relationships?.podcast?.data?.find(p => p.type == 'podcasts');
 	const podcastAttributes = podcast?.attributes;
 
@@ -635,7 +722,7 @@ function podcastToPlatformVideo(x, author) {
 
 	if (isSubscriberOnly) {
 
-		if(_settings.hideSubscriberOnly) {
+		if(_settings.hideSubscriberOnly || isPlaylistParent) {
 			return null;
 		}
 
@@ -662,4 +749,124 @@ function podcastToPlatformVideo(x, author) {
 	})
 }
 
+class PublisherChannelPlaylistsPager extends PlaylistPager {
+    constructor(url, offset = 0) {
+        const result = PublisherChannelPlaylistsPager.fetchChannelPlaylists(url, offset);
+        super(result.playlists, result.hasMore);
+        this.url = url;
+        this.offset = offset + 20;  // Increment offset for next page
+    }
+
+    static fetchChannelPlaylists(url, offset) {
+        const match = url.match(REGEX_PUBLISHER_CHANNEL_URL);
+        if (!match) {
+            return { playlists: [], hasMore: false };
+        }
+
+        const countryCode = match[1];
+        const channelId = match[3];
+
+        const apiUrl = API_GET_PUBLISHER_CHANNEL_PODCASTS_URL_TEMPLATE
+            .replace('{country}', countryCode)
+            .replace('{channel-id}', channelId)
+            .replace('{offset}', offset);
+
+        const resp = http.GET(apiUrl, state.headers);
+        if (!resp.isOk) {
+            return { playlists: [], hasMore: false };
+        }
+
+        const result = JSON.parse(resp.body);
+        const podcasts = result.data || [];
+
+        // Convert each podcast to a PlatformPlaylist object
+        const playlists = podcasts.map(podcast => {
+            const attributes = podcast.attributes;
+
+            return new PlatformPlaylist({
+                id: new PlatformID(PLATFORM, podcast.id, config.id),
+                name: attributes.name,
+                author: new PlatformAuthorLink(
+                    new PlatformID(PLATFORM, podcast.id, config.id),
+                    attributes.name,  // Use podcast name as the author name
+                    attributes.url,
+                    getArtworkUrl(attributes.artwork.url)
+                ),
+                thumbnail: getArtworkUrl(attributes.artwork.url),
+                videoCount: attributes.trackCount || -1,
+                url: attributes.url
+            });
+        });
+
+        return { playlists, hasMore: result.next !== undefined };
+    }
+
+    nextPage() {
+        const result = PublisherChannelPlaylistsPager.fetchChannelPlaylists(this.url, this.offset);
+        this.results = result.playlists;
+        this.hasMore = result.hasMore;
+        this.offset += 20;  // Increment offset for next page
+        return this;
+    }
+}
+
+class PodcastEpisodesPlaylistPager extends PlaylistPager {
+    constructor(url, offset = 0) {
+        const result = PodcastEpisodesPlaylistPager.fetchPodcastPlaylist(url, offset);
+        super(result.playlists, result.hasMore);
+        this.url = url;
+        this.offset = offset + 20;  // Increment for next page
+        this.id = result.id;
+        this.countryCode = result.countryCode;
+        this.podcastData = result.podcastData;
+    }
+
+    static fetchPodcastPlaylist(url, offset = 0) {
+        const match = url.match(REGEX_CHANNEL_URL);
+        if (!match) {
+            return { playlists: [], hasMore: false };
+        }
+
+        const podcastId = match[1];
+        const countryCode = extractCountryCode(url) || 'us';
+        
+        // First, get the podcast metadata
+        let podcastData = null;
+        if (state.channel[podcastId]) {
+            podcastData = state.channel[podcastId];
+        } else {
+            // If not in cache, fetch the podcast data
+            podcastData = source.getChannel(url);
+        }
+        
+        // Create a single playlist from this podcast
+        const playlist = new PlatformPlaylist({
+            id: new PlatformID(PLATFORM, podcastId, config.id),
+            name: podcastData.name,
+            author: new PlatformAuthorLink(
+                new PlatformID(PLATFORM, podcastId, config.id),
+                podcastData.name,
+                podcastData.url,
+                podcastData.thumbnail
+            ),
+            thumbnail: podcastData.thumbnail,
+            videoCount: -1, // Unknown count
+            url: url
+        });
+        
+        return { 
+            playlists: [playlist], 
+            hasMore: false,   // No pagination for podcast itself
+            id: podcastId,
+            countryCode: countryCode,
+            podcastData: podcastData
+        };
+    }
+
+    nextPage() {
+        // We only return a single playlist for a podcast, so no more pages
+        this.hasMore = false;
+        return this;
+    }
+}
 console.log("LOADED");

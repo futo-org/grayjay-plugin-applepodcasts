@@ -49,9 +49,16 @@ source.enable = function(conf, settings, savedState){
 		config = conf ?? {};
 		_settings = settings ?? {};
 
-		if (IS_TESTING) {
-			_settings.countryIndex = 0; //countrycode=us
+		if(_settings.countryIndex == undefined) {
+			_settings.countryIndex = 0;
+		}
+
+		if(_settings.allowExplicit == undefined) {
 			_settings.allowExplicit = false;
+		}
+
+		if(_settings.hideSubscriberOnly == undefined) {
+			_settings.hideSubscriberOnly = false;
 		}
 		
 		COUNTRY_CODES = loadOptionsForSetting('countryIndex').map((c) => c.toLowerCase().split(' - ')[0]);
@@ -123,6 +130,7 @@ source.getHome = function () {
 
             const contents = (episodes?.data ?? [])
                 .map(x => podcastToPlatformVideo(x))
+				.filter(Boolean)
                 .sort((a, b) => b.datetime - a.datetime);
 
             return new RecommendedVideoPager({
@@ -157,7 +165,8 @@ source.search = function (query, type, order, filters) {
 	
 	const results = result.results.groups
 	.find(x => x.groupId == "episode")?.data
-	.map(x => podcastToPlatformVideo(x));
+	.map(x => podcastToPlatformVideo(x))
+	.filter(Boolean)
 
 	return new ContentPager(results, false);
 };
@@ -256,7 +265,9 @@ function fetchEpisodesPage(id, offset=0, countryCode='us') {
 
 	const episodes = JSON.parse(resp.body);
 
-	return episodes.data.map(x => podcastToPlatformVideo(x, author));
+	return episodes.data
+	.map(x => podcastToPlatformVideo(x, author))
+	.filter(Boolean)
 }
 
 //Video
@@ -387,9 +398,10 @@ source.getPlaylist = function (url) {
 			  
 		  } while(hasMore);
 
-		  const all = playlistItems.map(x => podcastToPlatformVideo(x))
-		.filter(x => x != null)
-		.sort((a, b) => b.datetime - a.datetime);
+		  const all = playlistItems
+		  .map(x => podcastToPlatformVideo(x))
+		  .filter(Boolean)
+		  .sort((a, b) => b.datetime - a.datetime);
 
 
 		const thumbnailUrl = all.length ? (all?.[0]?.thumbnails?.sources?.[0].url ?? '') : '';
@@ -622,6 +634,11 @@ function podcastToPlatformVideo(x, author) {
 	const uploadDate = parseInt(new Date(x.attributes.releaseDateTime).getTime() / 1000);
 
 	if (isSubscriberOnly) {
+
+		if(_settings.hideSubscriberOnly) {
+			return null;
+		}
+
 		return new PlatformLockedContent({
 			id,
 			name,

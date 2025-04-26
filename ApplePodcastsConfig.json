@@ -31,6 +31,13 @@
             "default": "false"
         },
         {
+            "variable": "hideSubscriberOnly",
+            "name": "Hide Subscriber Only Content",
+            "description": "Hide content that is only available to subscribers",
+            "type": "Boolean",
+            "default": "false"
+        },
+        {
             "variable": "countryIndex",
             "name": "Country",
             "description": "Select a country to populate the Home tab with content specific to that region on Apple Podcasts.",

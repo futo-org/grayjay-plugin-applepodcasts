@@ -80,26 +80,25 @@ source.enable = function(conf, settings, savedState){
 	  
 		if (!didSaveState) {
 		  // init state
-		  const indexRes = http.GET(PLATFORM_BASE_URL, { 'User-Agent': config.authentication.userAgent });
-		  if(!indexRes.isOk) {
-			  throw new ScriptException("Failed to get index page [" + indexRes.code + "]");
-		  }
+		  const indexHtml = makeGetRequest(PLATFORM_BASE_URL, {
+			  parseResponse: false,
+			  customHeaders: { 'User-Agent': config.authentication.userAgent }
+		  });
 	
 		  // Extract the main script file name from the index page
-		  const scriptFileName = extractScriptFileName(indexRes.body);
-
+		  const scriptFileName = extractScriptFileName(indexHtml);
 		  if(!scriptFileName) {
 			  throw new ScriptException("Failed to extract script file name");
 		  }
 		  
 		  // Get the main script file content
-		  const scriptRes = http.GET(`${PLATFORM_BASE_ASSETS_URL}${scriptFileName}`, {'User-Agent': config.authentication.userAgent });
-		  if(!scriptRes.isOk) {
-			  throw new ScriptException(`Failed to get script file ${scriptFileName} [" ${scriptRes.code } "]`);
-		  }
+		  const scriptContent = makeGetRequest(`${PLATFORM_BASE_ASSETS_URL}${scriptFileName}`, {
+			  parseResponse: false,
+			  customHeaders: { 'User-Agent': config.authentication.userAgent }
+		  });
 	  
 		  // Extract the JWT token from the main script content
-		  const token = extractJWT(scriptRes.body);
+		  const token = extractJWT(scriptContent);
 	
 		  if(!token) {
 			  throw new ScriptException("Failed to extract Token");
@@ -125,12 +124,12 @@ source.getHome = function () {
         }
 
         nextPage() {
-            const resp = http.GET(this.url, state.headers);
+            const data = makeGetRequest(this.url, { throwOnError: false });
 
-            if (!resp.isOk)
+            if (!data)
                 return new ContentPager([], false);
 
-            const episodes = JSON.parse(resp.body)?.results?.['podcast-episodes']?.find(x => x.chart == "top");
+            const episodes = data?.results?.['podcast-episodes']?.find(x => x.chart == "top");
 
             const contents = (episodes?.data ?? [])
                 .map(x => podcastToPlatformVideo(x))
@@ -160,15 +159,17 @@ source.getSearchCapabilities = () => {
 	};
 };
 source.search = function (query, type, order, filters) {
-	const url = API_SEARCH_URL_TEMPLATE.replace("{0}", query);
-	const resp = http.GET(url, state.headers);
-
-	if(!resp.isOk)
-		throw new ScriptException("Failed to get search results [" + resp.code + "]");
-	const result = JSON.parse(resp.body);
-	
-	const results = result.results.groups
-	.find(x => x.groupId == "episode")?.data
+	const url = API_SEARCH_URL_TEMPLATE.replace("{0}", encodeURIComponent(query));
+    
+	const result = makeGetRequest(url, { throwOnError: false });
+	if (!result) {
+        return new ContentPager([], false);
+    }
+    
+    const episodes = result.results.groups
+	.find(x => x.groupId == "episode")?.data || [];
+        
+	const results = episodes
 	.map(x => podcastToPlatformVideo(x))
 	.filter(Boolean)
 
@@ -182,11 +183,12 @@ source.getSearchChannelContentsCapabilities = function () {
 	};
 };
 source.searchChannels = function(query) {
-	const url = API_SEARCH_PODCASTS_URL_TEMPLATE.replace("{query}", query);
-	const resp = http.GET(url, state.headers);
-	if(!resp.isOk)
-		throw new ScriptException("Failed to get search results [" + resp.code + "]");
-	const result = JSON.parse(resp.body);
+	const url = API_SEARCH_PODCASTS_URL_TEMPLATE.replace("{query}", encodeURIComponent(query));
+
+	const result = makeGetRequest(url, { throwOnError: false });
+	if (!result) {
+		return new ChannelPager([], false);
+	}
 	const results = result.results.map(x=>new PlatformAuthorLink(new PlatformID(PLATFORM, "" + x.artistId, config.id, undefined), x?.collectionName ?? x?.trackName ?? x?.collectionCensoredName ?? '', x.collectionViewUrl, x.artworkUrl100 ?? ""));
 
 	return new ChannelPager(results, false);
@@ -210,14 +212,13 @@ source.getChannel = function(url) {
         }
         
         const apiUrl = `https://amp-api.podcasts.apple.com/v1/catalog/${countryCode}/podcast-channels/${channelId}?l=en-US`;
-        const resp = http.GET(apiUrl, state.headers);
         
-        if (!resp.isOk) {
-            throw new ScriptException("Failed to get publisher channel [" + resp.code + "]");
+        const channelData = makeGetRequest(apiUrl, { throwOnError: false });
+        if (!channelData) {
+            throw new ScriptException("Failed to get publisher channel");
         }
         
-        const channelData = JSON.parse(resp.body).data[0];
-        const attributes = channelData.attributes;
+        const attributes = channelData.data[0].attributes;
         
         state.channel[channelId] = new PlatformChannel({
             id: new PlatformID(PLATFORM, channelId, config.id, undefined),
@@ -243,18 +244,22 @@ source.getChannel = function(url) {
         return state.channel[podcastId];
     }
 
-    const resp = http.GET(url, state.headers);
-    if(!resp.isOk)
-        throw new ScriptException("Failed to get channel [" + resp.code + "]");
+    const htmlContent = makeGetRequest(url, { 
+        parseResponse: false,
+        throwOnError: false
+    });
 
-    const showMatch = resp.body.match(REGEX_CHANNEL_SHOW);
+    if (!htmlContent)
+        throw new ScriptException("Failed to get channel page");
+
+    const showMatch = htmlContent.match(REGEX_CHANNEL_SHOW);
     if(!showMatch || showMatch.length != 2) {
         console.log("No show data", resp.body);
         throw new ScriptException("Could not find show data");
     }
     const showData = JSON.parse(showMatch[1]);
 
-	const serverDataMatch = resp.body.match(REGEX_CHANNEL_SERVER_DATA);
+	const serverDataMatch = htmlContent.match(REGEX_CHANNEL_SERVER_DATA);
 	let serverData;
 	if(serverDataMatch && serverDataMatch.length == 2) {
 		serverData = JSON.parse(serverDataMatch[1]);
@@ -292,7 +297,7 @@ source.getChannel = function(url) {
 		}
 
 		const yearActive = informationItems.find(item => item.title === 'Years Active');
-		if(episodeCount) {
+		if(yearActive) {
 			description += `<p>${yearActive.title}: ${yearActive.description}</p>`;
 		}
 	}
@@ -320,7 +325,7 @@ source.getChannel = function(url) {
 		description += `<p>Publishing Channel: <a href="${items.providerAction.pageUrl}">${items.providerAction.title}</a></p>`;
 	}
 
-    const banner = matchFirstOrDefault(resp.body, REGEX_IMAGE);
+    const banner = matchFirstOrDefault(htmlContent, REGEX_IMAGE);
     // save channel info to state (cache)
     state.channel[podcastId] = new PlatformChannel({
         id: new PlatformID(PLATFORM, podcastId, config.id, undefined),
@@ -386,8 +391,8 @@ function fetchEpisodesPage(id, offset=0, countryCode='us', isPlaylist=false) {
 	.replace("{country}", countryCode)
 	.replace("{podcast-id}", id)
 	.replace("{offset}", offset);
-	const resp = http.GET(urlEpisodes, state.headers);
-	if(!resp.isOk)
+	const resp = makeGetRequest(urlEpisodes, { throwOnError: false });
+	if(!resp)
 		return [];
 
 	const channelUrl = `${URL_CHANNEL}id${id}`;
@@ -395,8 +400,7 @@ function fetchEpisodesPage(id, offset=0, countryCode='us', isPlaylist=false) {
 	const channel = source.getChannel(channelUrl); 	// cached request
 	const author = new PlatformAuthorLink(new PlatformID(PLATFORM, id, config.id, undefined), channel.name, URL_CHANNEL + id, channel.thumbnail);
 
-	const episodes = JSON.parse(resp.body);
-	return episodes.data
+	return resp.data
 	.map(x => podcastToPlatformVideo(x, author, isPlaylist))
 	.filter(Boolean)
 }
@@ -418,14 +422,14 @@ source.getContentDetails = function(url) {
 	.replace("{country}", extractCountryCode(url))
 	.replace("{episode-id}", episodeId);
 
-	const resp = http.GET(episodeApiUrl, state.headers, false);
-	
-	if(!resp.isOk)
+	const responseData = makeGetRequest(episodeApiUrl, { useAuth: false });
+
+	if(!responseData)
 	{
-		throw new ScriptException("Failed to get content details [" + resp.code + "]");
+		throw new ScriptException("Failed to get content details");
 	}
 
-	const episodeData = JSON.parse(resp.body).data.find(x => x.type == "podcast-episodes");
+	const episodeData = responseData.data.find(x => x.type == "podcast-episodes");
 
 	if(!episodeData?.attributes?.assetUrl) {
 		throw new UnavailableException("This episode is not available yet");
@@ -435,7 +439,7 @@ source.getContentDetails = function(url) {
 		throw new UnavailableException("Explicit videos can be allowed using the plugin settings");
 	}
 
-	const podcastData = episodeData.relationships.podcast.data.find(r => r.type == 'podcasts');	
+	const podcastData = episodeData.relationships.podcast.data.find(r => r.type == 'podcasts');
 	
 	const channel = episodeData?.relationships?.channel?.data?.[0];
 
@@ -484,12 +488,13 @@ source.getUserSubscriptions = () => {
 
 	do {
 
-		const resp = http.GET(`${PLATFORM_BASE_URL_API}${next}`, state.headers , true);
-
-		if(!resp.isOk)
+		const podcasts = makeGetRequest(`${PLATFORM_BASE_URL_API}${next}`, { 
+			useAuth: true,
+			throwOnError: false 
+		});
+		
+		if (!podcasts)
 			return [];
-
-		const podcasts = JSON.parse(resp.body);
 
 		podcasts.data.forEach(podcast => {
 			subscriptionUrlList.push(podcast.attributes.url);
@@ -541,11 +546,11 @@ source.getPlaylist = function (url) {
 		});
 	}
 
-	// Handle saved episodes as before
+	// Handle saved episodes
 	if (url == SAVED_EPISODES_KEY) {
 
 		if (!bridge.isLoggedIn()) {
-			log('Failed to retrieve subscriptions page because not logged in.');
+			log('Failed to retrieve saved episodes because not logged in.');
 			throw new ScriptException('Not logged in');
 		}
 
@@ -555,13 +560,13 @@ source.getPlaylist = function (url) {
 
 		do {
 
-			const resp = http.GET(`${PLATFORM_BASE_URL_API}${next}`, state.headers, true);
-
-			if (!resp.isOk)
+			const podcasts = makeGetRequest(`${PLATFORM_BASE_URL_API}${next}`, { 
+				useAuth: true,
+				throwOnError: false 
+			});
+			
+			if (!podcasts)
 				return [];
-
-			const podcasts = JSON.parse(resp.body);
-
 			podcasts.data.forEach(podcast => {
 				playlistItems.push(podcast);
 			});
@@ -620,6 +625,14 @@ source.getPlaylist = function (url) {
  * // Returns an UnMuxVideoSourceDescriptor for audio or a VideoSourceDescriptor for video
  */
 function getVideoSource(episodeData) {
+	if (!episodeData?.attributes?.mediaKind) {
+		throw new ScriptException("Media kind not found");
+	}
+	
+	const duration = episodeData.attributes.durationInMilliseconds 
+		? parseInt(episodeData.attributes.durationInMilliseconds / 1000)
+		: 0;
+		
 	switch(episodeData.attributes.mediaKind) {
 		case "audio":
 			return new UnMuxVideoSourceDescriptor([], [
@@ -628,7 +641,7 @@ function getVideoSource(episodeData) {
 					container: "audio/mp3",
 					bitrate: 0,
 					url: episodeData.attributes.assetUrl,
-					duration: parseInt(episodeData.attributes.durationInMilliseconds / 1000),
+					duration: duration,
 				})
 			]);
 		case "video":
@@ -637,6 +650,7 @@ function getVideoSource(episodeData) {
 					name: "video/mp4",
 					container: "video/mp4",
 					url: episodeData.attributes.assetUrl,
+					duration: duration,
 				})
 			]);
 		default:
@@ -852,12 +866,11 @@ class PublisherChannelPlaylistsPager extends PlaylistPager {
             .replace('{channel-id}', channelId)
             .replace('{offset}', offset);
 
-        const resp = http.GET(apiUrl, state.headers);
-        if (!resp.isOk) {
+        const result = makeGetRequest(apiUrl, { throwOnError: false });
+        if (!result) {
             return { playlists: [], hasMore: false };
         }
 
-        const result = JSON.parse(resp.body);
         const podcasts = result.data || [];
 
         // Convert each podcast to a PlatformPlaylist object
@@ -982,16 +995,108 @@ function fetchPublisherChannelEpisodesPage(channelId, offset=0, countryCode='us'
         .replace('{channel-id}', channelId)
         .replace('{offset}', offset);
     
-    const resp = http.GET(apiUrl, state.headers);
-    if (!resp.isOk) {
+    const episodesData = makeGetRequest(apiUrl, { throwOnError: false });
+    if (!episodesData) {
         return [];
     }
-    
-    const episodesData = JSON.parse(resp.body);
-    
     return (episodesData.data || [])
         .map(episode => podcastToPlatformVideo(episode))
         .filter(Boolean);
+}
+
+/**
+ * Makes an API request to the specified URL with automatic retries and error handling
+ * 
+ * @param {string} url - The URL to make the request to
+ * @param {Object} options - Configuration options
+ * @param {boolean} [options.useAuth=false] - Whether to use authentication for the request
+ * @param {boolean} [options.parseResponse=true] - Whether to parse the response as JSON
+ * @param {number} [options.maxRetries=3] - Maximum number of retry attempts
+ * @param {Object} [options.customHeaders={}] - Additional headers to include in the request
+ * @param {boolean} [options.throwOnError=true] - Whether to throw an exception on error
+ * @returns {Object|string|null} - Parsed JSON object, response body string, or null on error if not throwing
+ * @throws {ScriptException} - If the request fails after all retry attempts and throwOnError is true
+ */
+function makeGetRequest(url, options = {}) {
+	const {
+		useAuth = false,
+		parseResponse = true,
+		maxRetries = 3,
+		customHeaders = {},
+		throwOnError = true
+	} = options;
+
+	let remainingAttempts = maxRetries + 1; // +1 for the initial attempt
+	let lastError;
+	
+	while (remainingAttempts > 0) {
+		try {
+			// Combine default headers from state with any custom headers
+			const headers = {
+				...state.headers,
+				...customHeaders
+			};
+			
+			const resp = http.GET(url, headers, useAuth);
+			
+			// Handle non-200 responses
+			if (!resp.isOk) {
+				const errorMsg = `Request failed with status ${resp.code}: ${url}`;
+				if (throwOnError) {
+					throw new ScriptException(errorMsg);
+				} else {
+					log(errorMsg);
+					return parseResponse ? null : resp.body;
+				}
+			}
+			
+			// Parse response if needed
+			if (parseResponse) {
+				try {
+					const json = JSON.parse(resp.body);
+					
+					// Check for API error responses that might be in a 200 response
+					if (json.errors) {
+						const errorMsg = `API returned error: ${JSON.stringify(json.errors)}`;
+						if (throwOnError) {
+							throw new ScriptException(errorMsg);
+						} else {
+							log(errorMsg);
+							return null;
+						}
+					}
+					
+					return json;
+				} catch (parseError) {
+					const errorMsg = `Failed to parse response as JSON: ${parseError.message}`;
+					if (throwOnError) {
+						throw new ScriptException(errorMsg);
+					} else {
+						log(errorMsg);
+						return null;
+					}
+				}
+			}
+			
+			return resp.body;
+		} catch (error) {
+			lastError = error;
+			remainingAttempts--;
+			
+			if (remainingAttempts > 0) {
+				// Log retry attempt but continue
+				log(`Request to ${url} failed, retrying... (${maxRetries - remainingAttempts + 1}/${maxRetries})`);
+			} else {
+				// All retry attempts have failed
+				log(`Request failed after ${maxRetries + 1} attempts: ${url}`);
+				if (throwOnError) {
+					throw lastError;
+				} else {
+					return parseResponse ? null : null;
+				}
+			}
+		}
+	}
 }
 
 log("LOADED");

@@ -44,7 +44,9 @@ let COUNTRY_CODES = [];
 let config = {};
 let _settings = {
 	countryIndex: 0,
-	allowExplicit: false
+	allowExplicit: false,
+	contentRecommendationOptionIndex: 0,
+	hideSubscriberOnly: false
 };
 
 //Source Methods
@@ -67,6 +69,10 @@ source.enable = function(conf, settings, savedState){
 
 		if(_settings.hideSubscriberOnly == undefined) {
 			_settings.hideSubscriberOnly = false;
+		}
+
+		if(_settings.contentRecommendationOptionIndex == undefined) {
+			_settings.contentRecommendationOptionIndex = 0;
 		}
 		
 		COUNTRY_CODES = loadOptionsForSetting('countryIndex').map((c) => c.toLowerCase().split(' - ')[0]);
@@ -464,7 +470,7 @@ source.getContentDetails = function(url) {
 	const show = source.getChannel(podcastData.attributes.url);
 	description += show.description;
 
-	return new PlatformVideoDetails({
+	const result = new PlatformVideoDetails({
 		id: new PlatformID(PLATFORM, episodeData.id, config?.id),
 		name: episodeData.attributes.name,
 		thumbnails: new Thumbnails([new Thumbnail(getArtworkUrl(episodeData.attributes.artwork.url), 0)]),
@@ -477,6 +483,39 @@ source.getContentDetails = function(url) {
 		description: description,
 		video: getVideoSource(episodeData)
 	});
+
+	result.getContentRecommendations = function () {
+
+		const contentRecommendationOptionIndex = _settings["contentRecommendationOptionIndex"];
+
+		let noPublisher = false;
+
+		// Content from channel publisher (if any)
+		if (contentRecommendationOptionIndex == 0) {
+			const channel = episodeData?.relationships?.channel?.data?.[0];
+
+			if (!channel?.attributes?.url) {
+				noPublisher = true;
+			} else {
+				const pager = source.getChannelContents(channel.attributes.url, null, null, null, true);
+				pager.results = pager.results.filter(x => x.datetime != result.datetime);
+				return pager;
+			}
+		}
+		// Content from podcast channel
+		if (contentRecommendationOptionIndex == 1 || noPublisher) {
+			const pager = source.getChannelContents(podcastData.attributes.url, null, null, null, true);
+			pager.results = pager.results.filter(x => x.datetime != result.datetime);
+			return pager;
+		}
+
+	};
+
+	if(IS_TESTING) {
+		result.getContentRecommendations();
+	}
+
+	return result;
 };
 
 source.saveState = () => {

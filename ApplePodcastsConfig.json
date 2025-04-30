@@ -38,6 +38,17 @@
             "default": "false"
         },
         {
+            "variable": "contentRecommendationOptionIndex",
+            "name": "Content recommendations source",
+            "description": "Select the source of content recommendations",
+            "type": "Dropdown",
+            "default": "0",
+            "options": [
+                "Content from channel publisher (if any)",
+                "Content from podcast"
+            ]
+        },
+        {
             "variable": "countryIndex",
             "name": "Country",
             "description": "Select a country to populate the Home tab with content specific to that region on Apple Podcasts.",
@@ -228,6 +239,7 @@
             "Use container type as source name;"
         ],
         "12" : [
+            "Improvement: Add content recommendations and plugin setting to select source;",
             "Improvement: Show subscriber-only episodes as Locked content;",
             "Improvement: Add setting to hide subscriber-only episodes;",
             "Improvement: Add playlists tab to podcast channels containing all episodes;",

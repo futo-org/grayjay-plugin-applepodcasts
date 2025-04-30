@@ -61,6 +61,10 @@ source.enable = function(conf, settings, savedState){
 			_settings.allowExplicit = false;
 		}
 
+		if(IS_TESTING) {
+			_settings.allowExplicit = true;
+		}
+
 		if(_settings.hideSubscriberOnly == undefined) {
 			_settings.hideSubscriberOnly = false;
 		}
@@ -244,7 +248,9 @@ source.getChannel = function(url) {
         return state.channel[podcastId];
     }
 
-    const htmlContent = makeGetRequest(url, { 
+	const channelUrl = removeQueryParams(url);
+
+    const htmlContent = makeGetRequest(channelUrl, { 
         parseResponse: false,
         throwOnError: false
     });
@@ -283,6 +289,8 @@ source.getChannel = function(url) {
 		log(`failed to parse metadata: ${e}`);
 	}
 
+	let copyrightDescription = '';
+
 	if(informationItems?.length) {
 		
 		const websiteItem = informationItems.find(item => item.title === 'Show Website');
@@ -300,6 +308,11 @@ source.getChannel = function(url) {
 		if(yearActive) {
 			description += `<p>${yearActive.title}: ${yearActive.description}</p>`;
 		}
+
+		const copyright = informationItems.find(item => item.title === 'Copyright');
+		if(copyright) {
+			copyrightDescription += `<p>${copyright.title}: ${copyright.description}</p>`;
+		}
 	}
 
 	if(metaObj?.category) {
@@ -314,16 +327,21 @@ source.getChannel = function(url) {
 	};
 
 	if(metaObj?.updateFrequency) {
-		description += `<p>Update Frequency: ${metaObj.updateFrequency}</p>`;
+		description += `<p>Frequency: ${metaObj.updateFrequency}</p>`;
 	}
 
 	if(metaObj?.ratings?.ratingAverage) {
 		description += `<p>Average Rating: ${metaObj?.ratings?.ratingAverage ?? 0} (votes: ${metaObj?.ratings?.totalNumberOfRatings ?? 0})</p>`;
 	}
 
+	description += `<p>Show: <a href="${channelUrl}">${showData.name}</a></p>`;
+
 	if(items?.providerAction?.title && items?.providerAction?.pageUrl) {
-		description += `<p>Publishing Channel: <a href="${items.providerAction.pageUrl}">${items.providerAction.title}</a></p>`;
+		description += `<p>Channel: <a href="${items.providerAction.pageUrl}">${items.providerAction.title}</a></p>`;
 	}
+
+	description += `${copyrightDescription}`;
+	
 
     const banner = matchFirstOrDefault(htmlContent, REGEX_IMAGE);
     // save channel info to state (cache)
@@ -334,8 +352,7 @@ source.getChannel = function(url) {
         banner,
         subscribers: -1,
         description,
-        url: removeQuery(url),
-        urlAlternatives: [removeQuery(url)],
+        url: removeQueryParams(url),
         links
     });
 
@@ -440,21 +457,12 @@ source.getContentDetails = function(url) {
 	}
 
 	const podcastData = episodeData.relationships.podcast.data.find(r => r.type == 'podcasts');
-	
-	const channel = episodeData?.relationships?.channel?.data?.[0];
 
 	let description = episodeData.attributes.description?.standard ?? '';
-	
-	if(channel) {
-		
-		if(channel?.attributes?.url && channel?.attributes?.name)
-		{
-			description += `<br><p>Publishing Channel: <a href="${channel?.attributes?.url}">${channel?.attributes?.name}</a></p>`;
-		}
-		else if(channel?.attributes?.name) {
-			description += `<br><p>Publishing Channel: ${channel?.attributes?.name}</p>`;
-		}
-	}
+
+	description += '<h1>Podcast Information</h1>';
+	const show = source.getChannel(podcastData.attributes.url);
+	description += show.description;
 
 	return new PlatformVideoDetails({
 		id: new PlatformID(PLATFORM, episodeData.id, config?.id),
@@ -707,7 +715,7 @@ function removeRemainingQuery(query) {
  * @param {string} query
  * @returns {string}
  */
-function removeQuery(query) {
+function removeQueryParams(query) {
 	const indexQuestion = query.indexOf("?");
 	if(indexQuestion >= 0)
 		return query.substring(0, indexQuestion);

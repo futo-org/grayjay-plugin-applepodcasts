@@ -340,10 +340,10 @@ source.getChannel = function(url) {
 		description += `<p>Average Rating: ${metaObj?.ratings?.ratingAverage ?? 0} (votes: ${metaObj?.ratings?.totalNumberOfRatings ?? 0})</p>`;
 	}
 
-	description += `<p>Show: <a href="${channelUrl}">${showData.name}</a></p>`;
+	description += `<p>Show (${showData.name}): ` + channelUrl + '</p>';
 
 	if(items?.providerAction?.title && items?.providerAction?.pageUrl) {
-		description += `<p>Channel: <a href="${items.providerAction.pageUrl}">${items.providerAction.title}</a></p>`;
+		description += `<p>Channel (${items.providerAction.title}): ` + items.providerAction.pageUrl+ '</p>';
 	}
 
 	description += `${copyrightDescription}`;

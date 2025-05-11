@@ -7,7 +7,7 @@
     "repositoryUrl": "https://gitlab.futo.org/videostreaming/plugins/apple-podcasts",
     "sourceUrl": "https://plugins.grayjay.app/ApplePodcasts/ApplePodcastsConfig.json",
     "scriptUrl": "./ApplePodcastsScript.js",
-    "version": 11,
+    "version": 12,
     "iconUrl": "./ApplePodcastsIcon.png",
     "id": "89ae4889-0420-4d16-ad6c-19c776b28f99",
     "subscriptionRateLimit": 10,
@@ -29,6 +29,24 @@
             "description": "Allow watching of explicit videos",
             "type": "Boolean",
             "default": "false"
+        },
+        {
+            "variable": "hideSubscriberOnly",
+            "name": "Hide Subscriber Only Content",
+            "description": "Hide content that is only available to subscribers",
+            "type": "Boolean",
+            "default": "false"
+        },
+        {
+            "variable": "contentRecommendationOptionIndex",
+            "name": "Content recommendations source",
+            "description": "Select the source of content recommendations",
+            "type": "Dropdown",
+            "default": "0",
+            "options": [
+                "Content from channel publisher (if any)",
+                "Content from podcast"
+            ]
         },
         {
             "variable": "countryIndex",
@@ -219,6 +237,15 @@
     "changelog": {
         "11" : [
             "Use container type as source name;"
+        ],
+        "12" : [
+            "Improvement: Add content recommendations and plugin setting to select source;",
+            "Improvement: Show subscriber-only episodes as Locked content;",
+            "Improvement: Add setting to hide subscriber-only episodes;",
+            "Improvement: Add playlist tab to podcast channels containing all episodes;",
+            "Improvement: Display top episodes from associated podcasts channels on publisher channels (network);",
+            "Improvement: Add podcast information in episode description and podcast channels description;",
+            "Improvement: Implement retry mechanism for improved network reliability;"
         ]
     }
 }

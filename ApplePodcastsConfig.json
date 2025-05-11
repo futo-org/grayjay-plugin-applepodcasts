@@ -242,9 +242,8 @@
             "Improvement: Add content recommendations and plugin setting to select source;",
             "Improvement: Show subscriber-only episodes as Locked content;",
             "Improvement: Add setting to hide subscriber-only episodes;",
-            "Improvement: Add playlists tab to podcast channels containing all episodes;",
-            "Improvement: Publisher channels with podcasts from associated creators (podcasts);",
-            "Improvement: Display top episodes from associated podcasts on publisher channels;",
+            "Improvement: Add playlist tab to podcast channels containing all episodes;",
+            "Improvement: Display top episodes from associated podcasts channels on publisher channels (network);",
             "Improvement: Add podcast information in episode description and podcast channels description;",
             "Improvement: Implement retry mechanism for improved network reliability;"
         ]

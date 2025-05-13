@@ -7,6 +7,7 @@ const URL_CHANNEL = "https://podcasts.apple.com/us/podcast/";
 
 const API_SEARCH_URL_TEMPLATE = 'https://amp-api.podcasts.apple.com/v1/catalog/us/search/groups?groups=episode&l=en-US&offset=25&term={0}&types=podcast-episodes&platform=web&extend[podcast-channels]=availableShowCount&include[podcast-episodes]=channel,podcast&limit=25&with=entitlements';
 const API_SEARCH_PODCASTS_URL_TEMPLATE = 'https://itunes.apple.com/search?media=podcast&term={query}';
+const API_SEARCH_AUTOCOMPLETE_URL_TEMPLATE = 'https://amp-api.podcasts.apple.com/v1/catalog/{country}/search/suggestions?kinds=terms&term={query}';
 const API_GET_PODCAST_EPISODES_URL_TEMPLATE = 'https://amp-api.podcasts.apple.com/v1/catalog/{country}/podcasts/{podcast-id}/episodes?l=en-US&offset={offset}';
 const API_GET_EPISODE_DETAILS_URL_TEMPLATE = 'https://amp-api.podcasts.apple.com/v1/catalog/{country}/podcast-episodes/{episode-id}?include=channel,podcast&include[podcasts]=episodes,podcast-seasons,trailers&include[podcast-seasons]=episodes&fields=artistName,artwork,assetUrl,contentRating,description,durationInMilliseconds,episodeNumber,guid,isExplicit,kind,mediaKind,name,offers,releaseDateTime,season,seasonNumber,storeUrl,summary,title,url&with=entitlements&l=en-US';
 const API_GET_PUBLISHER_CHANNEL_PODCASTS_URL_TEMPLATE = 'https://amp-api.podcasts.apple.com/v1/catalog/{country}/podcast-channels/{channel-id}/view/top-shows?l=en-US&offset={offset}&extend[podcast-channels]=isSubscribed,subscriptionOffers,title&include[podcasts]=channel&include[podcast-episodes]=channel,podcast&limit=20&with=entitlements';
@@ -158,8 +159,28 @@ source.getHome = function () {
 
 };
 
-source.searchSuggestions = function(query) {
-	return [];
+source.searchSuggestions = function (query) {
+    try {
+        
+
+		const selectedCountry = COUNTRY_CODES[_settings.countryIndex] ?? 'us';
+    	
+		const requestPath = API_SEARCH_AUTOCOMPLETE_URL_TEMPLATE
+			.replace("{country}", selectedCountry)
+			.replace("{query}", encodeURIComponent(query))
+
+		const res = makeGetRequest(requestPath, { throwOnError: false });
+
+		if (!res) {
+			return [];
+		}
+
+		return res?.results?.suggestions?.map(e => e.searchTerm) ?? [];
+    }
+    catch (error) {
+        log('Failed to get search suggestions:' + error?.message);
+        return [];
+    }
 };
 source.getSearchCapabilities = () => {
 	return {

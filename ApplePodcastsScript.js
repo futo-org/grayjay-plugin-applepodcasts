@@ -7,6 +7,7 @@ const URL_CHANNEL = "https://podcasts.apple.com/us/podcast/";
 
 const API_SEARCH_URL_TEMPLATE = 'https://amp-api.podcasts.apple.com/v1/catalog/us/search/groups?groups=episode&l=en-US&offset=25&term={0}&types=podcast-episodes&platform=web&extend[podcast-channels]=availableShowCount&include[podcast-episodes]=channel,podcast&limit=25&with=entitlements';
 const API_SEARCH_PODCASTS_URL_TEMPLATE = 'https://itunes.apple.com/search?media=podcast&term={query}';
+const API_SEARCH_PODCAST_CHANNELS_URL_TEMPLATE = 'https://amp-api.podcasts.apple.com/v1/catalog/{country}/search/suggestions?platform=web&types=podcast-channels&limit%5Bresults%3AtopResults%5D=10&kinds=topResults&term={query}';
 const API_SEARCH_AUTOCOMPLETE_URL_TEMPLATE = 'https://amp-api.podcasts.apple.com/v1/catalog/{country}/search/suggestions?kinds=terms&term={query}';
 const API_GET_PODCAST_EPISODES_URL_TEMPLATE = 'https://amp-api.podcasts.apple.com/v1/catalog/{country}/podcasts/{podcast-id}/episodes?l=en-US&offset={offset}';
 const API_GET_EPISODE_DETAILS_URL_TEMPLATE = 'https://amp-api.podcasts.apple.com/v1/catalog/{country}/podcast-episodes/{episode-id}?include=channel,podcast&include[podcasts]=episodes,podcast-seasons,trailers&include[podcast-seasons]=episodes&fields=artistName,artwork,assetUrl,contentRating,description,durationInMilliseconds,episodeNumber,guid,isExplicit,kind,mediaKind,name,offers,releaseDateTime,season,seasonNumber,storeUrl,summary,title,url&with=entitlements&l=en-US';
@@ -214,15 +215,44 @@ source.getSearchChannelContentsCapabilities = function () {
 	};
 };
 source.searchChannels = function(query) {
-	const url = API_SEARCH_PODCASTS_URL_TEMPLATE.replace("{query}", encodeURIComponent(query));
+	const urlRequestPodcasts = API_SEARCH_PODCASTS_URL_TEMPLATE.replace("{query}", encodeURIComponent(query));
 
-	const result = makeGetRequest(url, { throwOnError: false });
-	if (!result) {
+	const podcastRes = makeGetRequest(urlRequestPodcasts, { throwOnError: false });
+	if (!podcastRes) {
 		return new ChannelPager([], false);
 	}
-	const results = result.results.map(x=>new PlatformAuthorLink(new PlatformID(PLATFORM, "" + x.artistId, config.id, undefined), x?.collectionName ?? x?.trackName ?? x?.collectionCensoredName ?? '', x.collectionViewUrl, x.artworkUrl100 ?? ""));
 
-	return new ChannelPager(results, false);
+	let podcastChannels = [];
+	const podcastsResults = podcastRes.results.map(x=>new PlatformAuthorLink(new PlatformID(PLATFORM, "" + x.artistId, config.id, undefined), x?.collectionName ?? x?.trackName ?? x?.collectionCensoredName ?? '', x.collectionViewUrl, x.artworkUrl100 ?? ""));
+
+	const selectedCountry = COUNTRY_CODES[_settings.countryIndex] ?? 'us';
+
+	const urlRequestPodcastChannel = API_SEARCH_PODCAST_CHANNELS_URL_TEMPLATE
+	.replace("{country}", selectedCountry)
+	.replace("{query}", encodeURIComponent(query));
+
+
+	const result = makeGetRequest(urlRequestPodcastChannel, { throwOnError: false });
+	
+	result.results.suggestions.forEach(suggestion => {
+		if (suggestion.kind === 'topResults' && suggestion.content) {
+			const content = suggestion.content;
+
+			if (content.type === 'podcast-channels') {
+				const channel = content;
+				podcastChannels.push(new PlatformAuthorLink(
+					new PlatformID(PLATFORM, channel.id, config.id, undefined),
+					channel.attributes.name,
+					channel.attributes.url,
+					getArtworkUrl(channel.attributes.artwork.url)
+				));
+			}
+		}
+	});
+
+	
+
+	return new ChannelPager([...podcastChannels, ...podcastsResults], false);
 };
 
 //Channel

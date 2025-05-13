@@ -7,6 +7,8 @@ const URL_CHANNEL = "https://podcasts.apple.com/us/podcast/";
 
 const API_SEARCH_URL_TEMPLATE = 'https://amp-api.podcasts.apple.com/v1/catalog/us/search/groups?groups=episode&l=en-US&offset=25&term={0}&types=podcast-episodes&platform=web&extend[podcast-channels]=availableShowCount&include[podcast-episodes]=channel,podcast&limit=25&with=entitlements';
 const API_SEARCH_PODCASTS_URL_TEMPLATE = 'https://itunes.apple.com/search?media=podcast&term={query}';
+const API_SEARCH_PODCAST_CHANNELS_URL_TEMPLATE = 'https://amp-api.podcasts.apple.com/v1/catalog/{country}/search/suggestions?platform=web&types=podcast-channels&limit%5Bresults%3AtopResults%5D=10&kinds=topResults&term={query}';
+const API_SEARCH_AUTOCOMPLETE_URL_TEMPLATE = 'https://amp-api.podcasts.apple.com/v1/catalog/{country}/search/suggestions?kinds=terms&term={query}';
 const API_GET_PODCAST_EPISODES_URL_TEMPLATE = 'https://amp-api.podcasts.apple.com/v1/catalog/{country}/podcasts/{podcast-id}/episodes?l=en-US&offset={offset}';
 const API_GET_EPISODE_DETAILS_URL_TEMPLATE = 'https://amp-api.podcasts.apple.com/v1/catalog/{country}/podcast-episodes/{episode-id}?include=channel,podcast&include[podcasts]=episodes,podcast-seasons,trailers&include[podcast-seasons]=episodes&fields=artistName,artwork,assetUrl,contentRating,description,durationInMilliseconds,episodeNumber,guid,isExplicit,kind,mediaKind,name,offers,releaseDateTime,season,seasonNumber,storeUrl,summary,title,url&with=entitlements&l=en-US';
 const API_GET_PUBLISHER_CHANNEL_PODCASTS_URL_TEMPLATE = 'https://amp-api.podcasts.apple.com/v1/catalog/{country}/podcast-channels/{channel-id}/view/top-shows?l=en-US&offset={offset}&extend[podcast-channels]=isSubscribed,subscriptionOffers,title&include[podcasts]=channel&include[podcast-episodes]=channel,podcast&limit=20&with=entitlements';
@@ -158,8 +160,28 @@ source.getHome = function () {
 
 };
 
-source.searchSuggestions = function(query) {
-	return [];
+source.searchSuggestions = function (query) {
+    try {
+        
+
+		const selectedCountry = COUNTRY_CODES[_settings.countryIndex] ?? 'us';
+    	
+		const requestPath = API_SEARCH_AUTOCOMPLETE_URL_TEMPLATE
+			.replace("{country}", selectedCountry)
+			.replace("{query}", encodeURIComponent(query))
+
+		const res = makeGetRequest(requestPath, { throwOnError: false });
+
+		if (!res) {
+			return [];
+		}
+
+		return res?.results?.suggestions?.map(e => e.searchTerm) ?? [];
+    }
+    catch (error) {
+        log('Failed to get search suggestions:' + error?.message);
+        return [];
+    }
 };
 source.getSearchCapabilities = () => {
 	return {
@@ -193,15 +215,131 @@ source.getSearchChannelContentsCapabilities = function () {
 	};
 };
 source.searchChannels = function(query) {
-	const url = API_SEARCH_PODCASTS_URL_TEMPLATE.replace("{query}", encodeURIComponent(query));
+	// Prepare URLs for both API requests
+	const encodedQuery = encodeURIComponent(query);
+	const urlRequestPodcasts = API_SEARCH_PODCASTS_URL_TEMPLATE.replace("{query}", encodedQuery);
+	
+	const selectedCountry = COUNTRY_CODES[_settings.countryIndex] ?? 'us';
+	const urlRequestPodcastChannel = API_SEARCH_PODCAST_CHANNELS_URL_TEMPLATE
+		.replace("{country}", selectedCountry)
+		.replace("{query}", encodedQuery);
 
-	const result = makeGetRequest(url, { throwOnError: false });
-	if (!result) {
-		return new ChannelPager([], false);
+	// Function to process iTunes podcast results
+	function processPodcastResults(podcastRes) {
+		if (!podcastRes) {
+			return [];
+		}
+		return podcastRes?.results?.map(x => 
+			new PlatformAuthorLink(
+				new PlatformID(PLATFORM, "" + x.artistId, config.id, undefined), 
+				x?.collectionName ?? x?.trackName ?? x?.collectionCensoredName ?? '', 
+				x.collectionViewUrl, 
+				x.artworkUrl100 ?? ""
+			)
+		);
 	}
-	const results = result.results.map(x=>new PlatformAuthorLink(new PlatformID(PLATFORM, "" + x.artistId, config.id, undefined), x?.collectionName ?? x?.trackName ?? x?.collectionCensoredName ?? '', x.collectionViewUrl, x.artworkUrl100 ?? ""));
 
-	return new ChannelPager(results, false);
+	// Function to process podcast channel results
+	function processPodcastChannelResults(result) {
+		if (!result || !result.results || !result.results.suggestions) {
+			return [];
+		}
+		
+		const podcastChannels = [];
+		result?.results?.suggestions?.forEach(suggestion => {
+			if (suggestion.kind === 'topResults' && suggestion.content) {
+				const content = suggestion.content;
+				if (content.type === 'podcast-channels') {
+					const channel = content;
+					podcastChannels.push(new PlatformAuthorLink(
+						new PlatformID(PLATFORM, channel.id, config.id, undefined),
+						channel.attributes.name,
+						channel.attributes.url,
+						getArtworkUrl(channel.attributes.artwork.url)
+					));
+				}
+			}
+		});
+		return podcastChannels;
+	}
+
+	// Try batch request approach
+	try {
+		// Set up batch request parameters for both API calls
+		const batchResults = http.batch()
+			.GET(urlRequestPodcasts, state.headers)
+			.GET(urlRequestPodcastChannel, state.headers)
+			.execute();
+		
+		// Process response from iTunes podcast API
+		let podcastsResults = [];
+		if (batchResults[0].isOk) {
+			try {
+				const podcastResponse = JSON.parse(batchResults[0].body);
+				podcastsResults = processPodcastResults(podcastResponse);
+			} catch (e) {
+				log("Error processing podcast results: " + e.message);
+			}
+		}
+		
+		// Process response from Apple Podcasts channels API
+		let podcastChannels = [];
+		if (batchResults[1].isOk) {
+			try {
+				const channelResponse = JSON.parse(batchResults[1].body);
+				podcastChannels = processPodcastChannelResults(channelResponse);
+			} catch (e) {
+				log("Error processing podcast channel results: " + e.message);
+			}
+		}
+		
+		// Combine and return results
+		return new ChannelPager([...podcastChannels, ...podcastsResults], false);
+	} catch (error) {
+		// Fallback to sequential requests if batch fails
+		log("Batch request failed, falling back to sequential: " + error.message);
+		try {
+			// Make sequential requests
+			const podcastResponse = makeGetRequest(urlRequestPodcasts, { throwOnError: false });
+			const channelResponse = makeGetRequest(urlRequestPodcastChannel, { throwOnError: false });
+			
+			// Check for errors in each response
+			if (!podcastResponse && !channelResponse) {
+				log("Both fallback requests failed");
+				return new ChannelPager([], false);
+			}
+			
+			// Process podcast results
+			let podcastsResults = [];
+			if (podcastResponse) {
+				try {
+					podcastsResults = processPodcastResults(podcastResponse);
+				} catch (e) {
+					log("Error processing fallback podcast results: " + e.message);
+				}
+			} else {
+				log("Fallback podcast request failed");
+			}
+			
+			// Process channel results
+			let podcastChannels = [];
+			if (channelResponse) {
+				try {
+					podcastChannels = processPodcastChannelResults(channelResponse);
+				} catch (e) {
+					log("Error processing fallback channel results: " + e.message);
+				}
+			} else {
+				log("Fallback channel request failed");
+			}
+			
+			// Combine and return results (even if one of them failed)
+			return new ChannelPager([...podcastChannels, ...podcastsResults], false);
+		} catch (fallbackError) {
+			log("Sequential fallback also failed: " + fallbackError.message);
+			return new ChannelPager([], false);
+		}
+	}
 };
 
 //Channel

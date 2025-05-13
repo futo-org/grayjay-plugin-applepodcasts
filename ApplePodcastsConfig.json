@@ -7,7 +7,7 @@
     "repositoryUrl": "https://gitlab.futo.org/videostreaming/plugins/apple-podcasts",
     "sourceUrl": "https://plugins.grayjay.app/ApplePodcasts/ApplePodcastsConfig.json",
     "scriptUrl": "./ApplePodcastsScript.js",
-    "version": 12,
+    "version": 13,
     "iconUrl": "./ApplePodcastsIcon.png",
     "id": "89ae4889-0420-4d16-ad6c-19c776b28f99",
     "subscriptionRateLimit": 10,
@@ -246,6 +246,10 @@
             "Improvement: Display top episodes from associated podcasts channels on publisher channels (network);",
             "Improvement: Add podcast information in episode description and podcast channels description;",
             "Improvement: Implement retry mechanism for improved network reliability;"
+        ],
+        "13": [
+            "Improvement: Add search autocomplete;",
+            "Improvement: Include podcast channels (networks) in channel search results;"
         ]
     }
 }

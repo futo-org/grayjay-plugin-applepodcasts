@@ -21,7 +21,7 @@ const API_GET_SUBSCRIPTIONS_FIRST_PAGE_PATH = '/v1/me/library/podcasts?limit=30&
 const API_GET_SAVED_EPISODES_FIRST_PAGE_PATH = '/v1/me/library/podcast-episodes?include[podcast-episodes]=channel,playback-position,podcast&limit=30&fields[podcast-channels]=subscriptionName,isSubscribed&with=entitlements&l=en-US';//next pages are gotten from the next field (cursor) in the response
 
 const REGEX_CONTENT_URL = /https:\/\/podcasts\.apple\.com\/[a-zA-Z]*\/podcast\/.*?\/id([0-9]*)\?i=([0-9]*).*?/s
-const REGEX_CHANNEL_URL = /https:\/\/podcasts\.apple\.com\/[a-zA-Z]{2}\/podcast(?:\/[^/]+)?\/(?:id)?([0-9]+)/si;
+const REGEX_CHANNEL_URL = /https:\/\/(podcasts|embed\.podcasts)\.apple\.com\/[a-zA-Z]{2}\/podcast(?:\/[^/]+)?\/(?:id)?([0-9]+)/si;
 const REGEX_CHANNEL_SHOW = /<script id=schema:show type="application\/ld\+json">(.*?)<\/script>/s
 const REGEX_CHANNEL_SERVER_DATA = /<script\s+(?:[^>]*?\s+)?(?:id=["']serialized-server-data["']\s+type=["']application\/(?:ld\+)?json["']|type=["']application\/(?:ld\+)?json["']\s+id=["']serialized-server-data["'])\s*>(.*?)<\/script>/s;
 const REGEX_EPISODE = /<script name="schema:podcast-episode" type="application\/ld\+json">(.*?)<\/script>/s
@@ -30,7 +30,7 @@ const REGEX_IMAGE = /<meta property="og:image" content="(.*?)">/s
 const REGEX_CANONICAL_URL = /<link rel="canonical" href="(https:\/\/podcasts.apple.com\/[a-zA-Z]*\/podcast\/.*?)">/s
 const REGEX_MAIN_SCRIPT_FILENAME = /index-\w+\.js/;
 const REGEX_JWT = /\beyJhbGci[A-Za-z0-9-_]+?\.[A-Za-z0-9-_]+?\.[A-Za-z0-9-_]{43,}\b/;
-const REGEX_COUNTRY_CODE = /^https:\/\/podcasts\.apple\.com\/([a-z]{2})\//;
+const REGEX_COUNTRY_CODE = /^https:\/\/(podcasts|embed\.podcasts)\.apple\.com\/([a-z]{2})\//;
 const REGEX_PUBLISHER_CHANNEL_URL = /https:\/\/podcasts\.apple\.com\/([a-z]{2})\/channel\/([^\/]+)\/(?:id)?([0-9]+)/si;
 
 const SAVED_EPISODES_KEY  = 'applepodcasts:playlist:savedepisodes';
@@ -385,14 +385,19 @@ source.getChannel = function(url) {
     
     // Regular podcast channel handling
     const matchUrl = url.match(REGEX_CHANNEL_URL);
-    const podcastId = matchUrl[1];
+    const podcastId = matchUrl[2];
 
     // check if channel is cached and return it
     if(state.channel[podcastId]) {
         return state.channel[podcastId];
     }
 
-	const channelUrl = removeQueryParams(url);
+	let channelUrl = removeQueryParams(url);
+    
+    // Convert embed URLs to regular podcast URLs for fetching HTML content
+    if (channelUrl.includes('embed.podcasts.apple.com')) {
+        channelUrl = channelUrl.replace('embed.podcasts.apple.com', 'podcasts.apple.com');
+    }
 
     const htmlContent = makeGetRequest(channelUrl, { 
         parseResponse: false,
@@ -510,7 +515,7 @@ source.getChannelContents = function(url, type, order, filters, isPlaylist) {
     }
     
     // Otherwise, handle regular podcast channels
-    const id = removeRemainingQuery(url.match(REGEX_CHANNEL_URL)[1]);
+    const id = removeRemainingQuery(url.match(REGEX_CHANNEL_URL)[2]);
     return new AppleChannelContentPager(id, extractCountryCode(url), isPlaylist);
 };
 
@@ -706,7 +711,7 @@ source.getUserPlaylists = function () {
 source.getPlaylist = function (url) {
 	// Check if it's a podcast URL
 	if (REGEX_CHANNEL_URL.test(url)) {
-		const id = removeRemainingQuery(url.match(REGEX_CHANNEL_URL)[1]);
+		const id = removeRemainingQuery(url.match(REGEX_CHANNEL_URL)[2]);
 
 		// Get the podcast metadata
 		const channel = source.getChannel(url);
@@ -975,7 +980,7 @@ function loadOptionsForSetting(settingKey) {
  */
 function extractCountryCode(url) {
     const match = url.match(REGEX_COUNTRY_CODE);
-    return match ? match[1] : null; // Returns the country code or null if not found
+    return match ? match[2] : null; // Returns the country code or null if not found
 }
 
 function podcastToPlatformVideo(x, author, isPlaylistParent = false) {

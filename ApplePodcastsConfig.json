@@ -7,7 +7,7 @@
     "repositoryUrl": "https://gitlab.futo.org/videostreaming/plugins/apple-podcasts",
     "sourceUrl": "https://plugins.grayjay.app/ApplePodcasts/ApplePodcastsConfig.json",
     "scriptUrl": "./ApplePodcastsScript.js",
-    "version": 13,
+    "version": 14,
     "iconUrl": "./ApplePodcastsIcon.png",
     "id": "89ae4889-0420-4d16-ad6c-19c776b28f99",
     "subscriptionRateLimit": 10,
@@ -250,6 +250,9 @@
         "13": [
             "Improvement: Add search autocomplete;",
             "Improvement: Include podcast channels (networks) in channel search results;"
+        ],
+        "14": [
+            "Improvement: Add support for embed channel URLs (embed.podcasts.apple.com);"
         ]
     }
 }

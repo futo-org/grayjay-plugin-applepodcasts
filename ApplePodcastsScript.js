@@ -231,7 +231,7 @@ source.searchChannels = function(query) {
 		}
 		return podcastRes?.results?.map(x => 
 			new PlatformAuthorLink(
-				new PlatformID(PLATFORM, "" + x.artistId, config.id, undefined), 
+				new PlatformID(PLATFORM, "" + x.artistId, config.id), 
 				x?.collectionName ?? x?.trackName ?? x?.collectionCensoredName ?? '', 
 				x.collectionViewUrl, 
 				x.artworkUrl100 ?? ""
@@ -252,7 +252,7 @@ source.searchChannels = function(query) {
 				if (content.type === 'podcast-channels') {
 					const channel = content;
 					podcastChannels.push(new PlatformAuthorLink(
-						new PlatformID(PLATFORM, channel.id, config.id, undefined),
+						new PlatformID(PLATFORM, channel.id, config.id),
 						channel.attributes.name,
 						channel.attributes.url,
 						getArtworkUrl(channel.attributes.artwork.url)
@@ -369,7 +369,7 @@ source.getChannel = function(url) {
         const attributes = channelData.data[0].attributes;
         
         state.channel[channelId] = new PlatformChannel({
-            id: new PlatformID(PLATFORM, channelId, config.id, undefined),
+            id: new PlatformID(PLATFORM, channelId, config.id),
             name: attributes.name,
             thumbnail: getArtworkUrl(attributes.artwork.url),
             banner: attributes.logoArtwork ? getArtworkUrl(attributes.logoArtwork.url) : null,
@@ -493,9 +493,10 @@ source.getChannel = function(url) {
 	
 
     const banner = matchFirstOrDefault(htmlContent, REGEX_IMAGE);
+
     // save channel info to state (cache)
     state.channel[podcastId] = new PlatformChannel({
-        id: new PlatformID(PLATFORM, podcastId, config.id, undefined),
+        id: new PlatformID(PLATFORM, podcastId, config.id),
         name: showData.name,
         thumbnail: banner,
         banner,
@@ -564,7 +565,12 @@ function fetchEpisodesPage(id, offset=0, countryCode='us', isPlaylist=false) {
 	const channelUrl = `${URL_CHANNEL}id${id}`;
 	
 	const channel = source.getChannel(channelUrl); 	// cached request
-	const author = new PlatformAuthorLink(new PlatformID(PLATFORM, id, config.id, undefined), channel.name, URL_CHANNEL + id, channel.thumbnail);
+	const author = new PlatformAuthorLink(
+		new PlatformID(PLATFORM, id, config.id), 
+		channel.name, 
+		URL_CHANNEL + id, 
+		channel.thumbnail
+	);
 
 	return resp.data
 	.map(x => podcastToPlatformVideo(x, author, isPlaylist))
@@ -617,7 +623,12 @@ source.getContentDetails = function(url) {
 		id: new PlatformID(PLATFORM, episodeData.id, config?.id),
 		name: episodeData.attributes.name,
 		thumbnails: new Thumbnails([new Thumbnail(getArtworkUrl(episodeData.attributes.artwork.url), 0)]),
-		author: new PlatformAuthorLink(new PlatformID(PLATFORM, podcastData.id, config.id, undefined), podcastData.attributes.name, podcastData.attributes.url, getArtworkUrl(podcastData.attributes.artwork.url)),
+		author: new PlatformAuthorLink(
+			new PlatformID(PLATFORM, podcastData.id, config.id), 
+			podcastData.attributes.name, 
+			podcastData.attributes.url, 
+			getArtworkUrl(podcastData.attributes.artwork.url)
+		),
 		uploadDate: parseInt(new Date(episodeData.attributes.releaseDateTime).getTime() / 1000),
 		duration: parseInt(episodeData.attributes.durationInMilliseconds / 1000),
 		viewCount: -1,
@@ -998,7 +1009,11 @@ function podcastToPlatformVideo(x, author, isPlaylistParent = false) {
 	let duration = durationInMilliseconds ? durationInMilliseconds / 1000 : 0;
 
 	if (!author) {
-		author = new PlatformAuthorLink(new PlatformID(PLATFORM, podcast.id, config.id, undefined), podcastAttributes?.name, podcastAttributes.url, getArtworkUrl(podcastAttributes.artwork.url) ?? "");
+		author = new PlatformAuthorLink(
+			new PlatformID(PLATFORM, podcast.id, config.id), 
+			podcastAttributes?.name, podcastAttributes.url, 
+			getArtworkUrl(podcastAttributes.artwork.url) ?? ""
+		);
 	}
 
 	const id = new PlatformID(PLATFORM, x.id + "", config?.id);

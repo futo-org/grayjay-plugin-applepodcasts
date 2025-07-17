@@ -31,7 +31,7 @@ const REGEX_CANONICAL_URL = /<link rel="canonical" href="(https:\/\/podcasts.app
 const REGEX_MAIN_SCRIPT_FILENAME = /index-\w+\.js/;
 const REGEX_JWT = /\beyJhbGci[A-Za-z0-9-_]+?\.[A-Za-z0-9-_]+?\.[A-Za-z0-9-_]{43,}\b/;
 const REGEX_COUNTRY_CODE = /^https:\/\/(podcasts|embed\.podcasts)\.apple\.com\/([a-z]{2})\//;
-const REGEX_PUBLISHER_CHANNEL_URL = /https:\/\/podcasts\.apple\.com\/([a-z]{2})\/channel\/([^\/]+)\/(?:id)?([0-9]+)/si;
+const REGEX_PUBLISHER_CHANNEL_URL = /https:\/\/podcasts\.apple\.com\/([a-z]{2})\/channel\/(?:([^\/]+)\/)?(?:id)?([0-9]+)/si;
 
 const SAVED_EPISODES_KEY  = 'applepodcasts:playlist:savedepisodes';
 
@@ -229,14 +229,18 @@ source.searchChannels = function(query) {
 		if (!podcastRes) {
 			return [];
 		}
-		return podcastRes?.results?.map(x => 
-			new PlatformAuthorLink(
-				new PlatformID(PLATFORM, "" + x.artistId, config.id), 
-				x?.collectionName ?? x?.trackName ?? x?.collectionCensoredName ?? '', 
-				x.collectionViewUrl, 
+		return podcastRes?.results?.map(x => {
+
+			const countryCode = extractCountryCode(x.collectionViewUrl) || 'us';
+			const podcastId = extractPodcastId(x.collectionViewUrl);
+			const podcastUrl = `https://podcasts.apple.com/${countryCode}/podcast/${podcastId}`;
+			return new PlatformAuthorLink(
+				new PlatformID(PLATFORM, podcastId, config.id),
+				x?.collectionName ?? x?.trackName ?? x?.collectionCensoredName ?? '',
+				podcastUrl,
 				x.artworkUrl100 ?? ""
-			)
-		);
+			);
+		});
 	}
 
 	// Function to process podcast channel results
@@ -393,6 +397,8 @@ source.getChannel = function(url) {
     }
 
 	let channelUrl = removeQueryParams(url);
+
+	let countryCode = extractCountryCode(channelUrl) || 'us';
     
     // Convert embed URLs to regular podcast URLs for fetching HTML content
     if (channelUrl.includes('embed.podcasts.apple.com')) {
@@ -409,7 +415,6 @@ source.getChannel = function(url) {
 
     const showMatch = htmlContent.match(REGEX_CHANNEL_SHOW);
     if(!showMatch || showMatch.length != 2) {
-        console.log("No show data", resp.body);
         throw new ScriptException("Could not find show data");
     }
     const showData = JSON.parse(showMatch[1]);
@@ -490,9 +495,27 @@ source.getChannel = function(url) {
 	}
 
 	description += `${copyrightDescription}`;
-	
 
     const banner = matchFirstOrDefault(htmlContent, REGEX_IMAGE);
+
+	const uniqueUrlAlternatives = new Set(
+		[
+			url,
+			removeQueryParams(url),
+			showData.url,
+			URL_CHANNEL + podcastId,
+			`https://podcasts.apple.com/${countryCode}/podcast/id${podcastId}`,
+			`https://podcasts.apple.com/${countryCode}/podcast/${podcastId}`,
+		]
+	); 
+
+	COUNTRY_CODES.forEach(countryCode => {
+		uniqueUrlAlternatives.add(`https://podcasts.apple.com/${countryCode}/podcast/id${podcastId}`);
+		uniqueUrlAlternatives.add(`https://podcasts.apple.com/${countryCode}/podcast/${podcastId}`);
+		uniqueUrlAlternatives.add(showData.url.replace(/https:\/\/podcasts\.apple\.com\/[a-z]{2}/, `https://podcasts.apple.com/${countryCode}`));
+	});
+
+	const urlAlternatives = Array.from(uniqueUrlAlternatives);
 
     // save channel info to state (cache)
     state.channel[podcastId] = new PlatformChannel({
@@ -502,8 +525,9 @@ source.getChannel = function(url) {
         banner,
         subscribers: -1,
         description,
-        url: removeQueryParams(url),
-        links
+        url: `https://podcasts.apple.com/${countryCode}/podcast/${podcastId}`,
+        links,
+		urlAlternatives
     });
 
     return state.channel[podcastId];
@@ -517,7 +541,7 @@ source.getChannelContents = function(url, type, order, filters, isPlaylist) {
     
     // Otherwise, handle regular podcast channels
     const id = removeRemainingQuery(url.match(REGEX_CHANNEL_URL)[2]);
-    return new AppleChannelContentPager(id, extractCountryCode(url), isPlaylist);
+    return new AppleChannelContentPager(id, url, isPlaylist);
 };
 
 source.getChannelPlaylists = function(url) {
@@ -536,11 +560,11 @@ source.getChannelPlaylists = function(url) {
 };
 
 class AppleChannelContentPager extends ContentPager {
-	constructor(id, countryCode, isPlaylist) {
-		super(fetchEpisodesPage(id, 0, countryCode, isPlaylist), true);
+	constructor(id, channelUrl, isPlaylist) {
+		super(fetchEpisodesPage(id, 0, channelUrl, isPlaylist), true);
 		this.offset = this.results.length;
 		this.id = id;
-		this.countryCode = countryCode;
+		this.channelUrl = channelUrl;
 		this.isPlaylist = isPlaylist;
 		
 	}
@@ -548,12 +572,15 @@ class AppleChannelContentPager extends ContentPager {
 	nextPage() {
 		this.offset += 10;
 		
-		this.results = fetchEpisodesPage(this.id, this.offset, this.countryCode, this.isPlaylist);
+		this.results = fetchEpisodesPage(this.id, this.offset, this.channelUrl, this.isPlaylist);
 		this.hasMore = this.results.length > 0;
 		return this;
 	}
 }
-function fetchEpisodesPage(id, offset=0, countryCode='us', isPlaylist=false) {
+function fetchEpisodesPage(id, offset=0, channelUrl, isPlaylist=false) {
+
+	const countryCode = extractCountryCode(channelUrl) || 'us';
+
 	const urlEpisodes = API_GET_PODCAST_EPISODES_URL_TEMPLATE
 	.replace("{country}", countryCode)
 	.replace("{podcast-id}", id)
@@ -562,13 +589,11 @@ function fetchEpisodesPage(id, offset=0, countryCode='us', isPlaylist=false) {
 	if(!resp)
 		return [];
 
-	const channelUrl = `${URL_CHANNEL}id${id}`;
-	
 	const channel = source.getChannel(channelUrl); 	// cached request
 	const author = new PlatformAuthorLink(
 		new PlatformID(PLATFORM, id, config.id), 
 		channel.name, 
-		URL_CHANNEL + id, 
+		channel.url, 
 		channel.thumbnail
 	);
 
@@ -626,7 +651,7 @@ source.getContentDetails = function(url) {
 		author: new PlatformAuthorLink(
 			new PlatformID(PLATFORM, podcastData.id, config.id), 
 			podcastData.attributes.name, 
-			podcastData.attributes.url, 
+			show.url, 
 			getArtworkUrl(podcastData.attributes.artwork.url)
 		),
 		uploadDate: parseInt(new Date(episodeData.attributes.releaseDateTime).getTime() / 1000),
@@ -1009,9 +1034,14 @@ function podcastToPlatformVideo(x, author, isPlaylistParent = false) {
 	let duration = durationInMilliseconds ? durationInMilliseconds / 1000 : 0;
 
 	if (!author) {
+
+		const countryCode = extractCountryCode(podcastAttributes.url) || 'us';
+		const podcastUrl = `https://podcasts.apple.com/${countryCode}/podcast/${podcast.id}`;
+
 		author = new PlatformAuthorLink(
 			new PlatformID(PLATFORM, podcast.id, config.id), 
-			podcastAttributes?.name, podcastAttributes.url, 
+			podcastAttributes?.name, 
+			podcastUrl, 
 			getArtworkUrl(podcastAttributes.artwork.url) ?? ""
 		);
 	}

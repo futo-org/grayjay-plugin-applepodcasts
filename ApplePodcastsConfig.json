@@ -252,7 +252,9 @@
             "Improvement: Include podcast channels (networks) in channel search results;"
         ],
         "14": [
-            "Improvement: Add support for embed channel URLs (embed.podcasts.apple.com);"
+            "Fix: Some subscriptions not being recognized as subscribed in channel details and media details;",
+            "Improvement: Add support for embed channel URLs (embed.podcasts.apple.com);",
+            "Improvement: Standardizes Apple Podcasts URL handling;"
         ]
     }
 }

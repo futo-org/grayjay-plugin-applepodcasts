@@ -230,10 +230,8 @@ source.searchChannels = function(query) {
 			return [];
 		}
 		return podcastRes?.results?.map(x => {
-
-			const countryCode = extractCountryCode(x.collectionViewUrl) || 'us';
 			const podcastId = extractPodcastId(x.collectionViewUrl);
-			const podcastUrl = `https://podcasts.apple.com/${countryCode}/podcast/${podcastId}`;
+			const podcastUrl = `https://podcasts.apple.com/us/podcast/${podcastId}`;
 			return new PlatformAuthorLink(
 				new PlatformID(PLATFORM, podcastId, config.id),
 				x?.collectionName ?? x?.trackName ?? x?.collectionCensoredName ?? '',
@@ -355,7 +353,6 @@ source.getChannel = function(url) {
     // Check if it's a publisher channel URL
     const publisherMatch = url.match(REGEX_PUBLISHER_CHANNEL_URL);
     if (publisherMatch) {
-        const countryCode = publisherMatch[1];
         const channelId = publisherMatch[3];
         
         // If already cached, return it
@@ -363,7 +360,7 @@ source.getChannel = function(url) {
             return state.channel[channelId];
         }
         
-        const apiUrl = `https://amp-api.podcasts.apple.com/v1/catalog/${countryCode}/podcast-channels/${channelId}?l=en-US`;
+        const apiUrl = `https://amp-api.podcasts.apple.com/v1/catalog/us/podcast-channels/${channelId}?l=en-US`;
         
         const channelData = makeGetRequest(apiUrl, { throwOnError: false });
         if (!channelData) {
@@ -397,8 +394,6 @@ source.getChannel = function(url) {
     }
 
 	let channelUrl = removeQueryParams(url);
-
-	let countryCode = extractCountryCode(channelUrl) || 'us';
     
     // Convert embed URLs to regular podcast URLs for fetching HTML content
     if (channelUrl.includes('embed.podcasts.apple.com')) {
@@ -504,8 +499,8 @@ source.getChannel = function(url) {
 			removeQueryParams(url),
 			showData.url,
 			URL_CHANNEL + podcastId,
-			`https://podcasts.apple.com/${countryCode}/podcast/id${podcastId}`,
-			`https://podcasts.apple.com/${countryCode}/podcast/${podcastId}`,
+			`https://podcasts.apple.com/us/podcast/id${podcastId}`,
+			`https://podcasts.apple.com/us/podcast/${podcastId}`,
 		]
 	); 
 
@@ -528,7 +523,7 @@ source.getChannel = function(url) {
         banner,
         subscribers: -1,
         description,
-        url: `https://podcasts.apple.com/${countryCode}/podcast/${podcastId}`,
+        url: `https://podcasts.apple.com/us/podcast/${podcastId}`,
         links,
 		urlAlternatives
     });
@@ -582,10 +577,8 @@ class AppleChannelContentPager extends ContentPager {
 }
 function fetchEpisodesPage(id, offset=0, channelUrl, isPlaylist=false) {
 
-	const countryCode = extractCountryCode(channelUrl) || 'us';
-
 	const urlEpisodes = API_GET_PODCAST_EPISODES_URL_TEMPLATE
-	.replace("{country}", countryCode)
+	.replace("{country}", 'us')
 	.replace("{podcast-id}", id)
 	.replace("{offset}", offset);
 	const resp = makeGetRequest(urlEpisodes, { throwOnError: false });
@@ -619,7 +612,7 @@ source.getContentDetails = function(url) {
 	}
 	
 	const episodeApiUrl = API_GET_EPISODE_DETAILS_URL_TEMPLATE
-	.replace("{country}", extractCountryCode(url))
+	.replace("{country}", 'us')
 	.replace("{episode-id}", episodeId);
 
 	const responseData = makeGetRequest(episodeApiUrl, { useAuth: false });
@@ -726,7 +719,9 @@ source.getUserSubscriptions = () => {
 			return [];
 
 		podcasts.data.forEach(podcast => {
-			subscriptionUrlList.push(podcast.attributes.url);
+			const podcastId = extractPodcastId(podcast.attributes.url);
+			let subscriptionUrl = `https://podcasts.apple.com/us/podcast/${podcastId}`;
+			subscriptionUrlList.push(subscriptionUrl);
 		});
 
 		hasMore = !!podcasts.next;
@@ -1012,15 +1007,6 @@ function loadOptionsForSetting(settingKey) {
 }
 
 
-/**
- * Extract the country code from the URL since it is needed for the API requests
- * @param {string} url
- * @returns {string}
- */
-function extractCountryCode(url) {
-    const match = url.match(REGEX_COUNTRY_CODE);
-    return match ? match[2] : null; // Returns the country code or null if not found
-}
 
 function podcastToPlatformVideo(x, author, isPlaylistParent = false) {
 	const podcast = x.relationships?.podcast?.data?.find(p => p.type == 'podcasts');
@@ -1038,8 +1024,7 @@ function podcastToPlatformVideo(x, author, isPlaylistParent = false) {
 
 	if (!author) {
 
-		const countryCode = extractCountryCode(podcastAttributes.url) || 'us';
-		const podcastUrl = `https://podcasts.apple.com/${countryCode}/podcast/${podcast.id}`;
+		const podcastUrl = `https://podcasts.apple.com/us/podcast/${podcast.id}`;
 
 		author = new PlatformAuthorLink(
 			new PlatformID(PLATFORM, podcast.id, config.id), 
@@ -1160,7 +1145,6 @@ class PodcastEpisodesPlaylistPager extends PlaylistPager {
         }
 
         const podcastId = match[1];
-        const countryCode = extractCountryCode(url) || 'us';
         
         // First, get the podcast metadata
         let podcastData = null;
@@ -1190,7 +1174,7 @@ class PodcastEpisodesPlaylistPager extends PlaylistPager {
             playlists: [playlist], 
             hasMore: false,   // No pagination for podcast itself
             id: podcastId,
-            countryCode: countryCode,
+            countryCode: 'us',
             podcastData: podcastData
         };
     }

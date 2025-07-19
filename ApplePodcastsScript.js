@@ -509,6 +509,9 @@ source.getChannel = function(url) {
 		]
 	); 
 
+	// Add all supported regionalized URLs
+	// doing this to solve issues data consistency issues from previous versions where a subscription was added with a different country code (localized from deeplink)
+	// but then even subscribed, the channel would not be recognized as subscribed in the channel details and media details
 	COUNTRY_CODES.forEach(countryCode => {
 		uniqueUrlAlternatives.add(`https://podcasts.apple.com/${countryCode}/podcast/id${podcastId}`);
 		uniqueUrlAlternatives.add(`https://podcasts.apple.com/${countryCode}/podcast/${podcastId}`);

@@ -1,6 +1,6 @@
 const PLATFORM = "Apple Podcasts";
 const PLATFORM_BASE_URL = "https://podcasts.apple.com";
-const PLATFORM_SAVED_EPISODES_URL = "https://podcasts.apple.com/{country}/library/saved-episodes";
+const PLATFORM_SAVED_EPISODES_URL = "https://podcasts.apple.com/us/library/saved-episodes";
 const PLATFORM_BASE_URL_API = 'https://amp-api.podcasts.apple.com'
 const PLATFORM_BASE_ASSETS_URL = "https://podcasts.apple.com/assets/";
 const URL_CHANNEL = "https://podcasts.apple.com/us/podcast/";
@@ -9,10 +9,10 @@ const API_SEARCH_URL_TEMPLATE = 'https://amp-api.podcasts.apple.com/v1/catalog/u
 const API_SEARCH_PODCASTS_URL_TEMPLATE = 'https://itunes.apple.com/search?media=podcast&term={query}';
 const API_SEARCH_PODCAST_CHANNELS_URL_TEMPLATE = 'https://amp-api.podcasts.apple.com/v1/catalog/{country}/search/suggestions?platform=web&types=podcast-channels&limit%5Bresults%3AtopResults%5D=10&kinds=topResults&term={query}';
 const API_SEARCH_AUTOCOMPLETE_URL_TEMPLATE = 'https://amp-api.podcasts.apple.com/v1/catalog/{country}/search/suggestions?kinds=terms&term={query}';
-const API_GET_PODCAST_EPISODES_URL_TEMPLATE = 'https://amp-api.podcasts.apple.com/v1/catalog/{country}/podcasts/{podcast-id}/episodes?l=en-US&offset={offset}';
-const API_GET_EPISODE_DETAILS_URL_TEMPLATE = 'https://amp-api.podcasts.apple.com/v1/catalog/{country}/podcast-episodes/{episode-id}?include=channel,podcast&include[podcasts]=episodes,podcast-seasons,trailers&include[podcast-seasons]=episodes&fields=artistName,artwork,assetUrl,contentRating,description,durationInMilliseconds,episodeNumber,guid,isExplicit,kind,mediaKind,name,offers,releaseDateTime,season,seasonNumber,storeUrl,summary,title,url&with=entitlements&l=en-US';
-const API_GET_PUBLISHER_CHANNEL_PODCASTS_URL_TEMPLATE = 'https://amp-api.podcasts.apple.com/v1/catalog/{country}/podcast-channels/{channel-id}/view/top-shows?l=en-US&offset={offset}&extend[podcast-channels]=isSubscribed,subscriptionOffers,title&include[podcasts]=channel&include[podcast-episodes]=channel,podcast&limit=20&with=entitlements';
-const API_GET_PUBLISHER_CHANNEL_EPISODES_URL_TEMPLATE = 'https://amp-api.podcasts.apple.com/v1/catalog/{country}/podcast-channels/{channel-id}/view/top-episodes?l=en-US&offset={offset}&extend[podcast-channels]=isSubscribed,subscriptionOffers,title&include[podcasts]=channel&include[podcast-episodes]=channel,podcast&limit=20&with=entitlements';
+const API_GET_PODCAST_EPISODES_URL_TEMPLATE = 'https://amp-api.podcasts.apple.com/v1/catalog/us/podcasts/{podcast-id}/episodes?l=en-US&offset={offset}';
+const API_GET_EPISODE_DETAILS_URL_TEMPLATE = 'https://amp-api.podcasts.apple.com/v1/catalog/us/podcast-episodes/{episode-id}?include=channel,podcast&include[podcasts]=episodes,podcast-seasons,trailers&include[podcast-seasons]=episodes&fields=artistName,artwork,assetUrl,contentRating,description,durationInMilliseconds,episodeNumber,guid,isExplicit,kind,mediaKind,name,offers,releaseDateTime,season,seasonNumber,storeUrl,summary,title,url&with=entitlements&l=en-US';
+const API_GET_PUBLISHER_CHANNEL_PODCASTS_URL_TEMPLATE = 'https://amp-api.podcasts.apple.com/v1/catalog/us/podcast-channels/{channel-id}/view/top-shows?l=en-US&offset={offset}&extend[podcast-channels]=isSubscribed,subscriptionOffers,title&include[podcasts]=channel&include[podcast-episodes]=channel,podcast&limit=20&with=entitlements';
+const API_GET_PUBLISHER_CHANNEL_EPISODES_URL_TEMPLATE = 'https://amp-api.podcasts.apple.com/v1/catalog/us/podcast-channels/{channel-id}/view/top-episodes?l=en-US&offset={offset}&extend[podcast-channels]=isSubscribed,subscriptionOffers,title&include[podcasts]=channel&include[podcast-episodes]=channel,podcast&limit=20&with=entitlements';
 
 const API_GET_TRENDING_EPISODES_URL_PATH_TEMPLATE = '/v1/catalog/{country}/charts?chart=top&genre=26&l=en-US&limit=10&offset=0&types=podcast-episodes'
 const API_GET_TRENDING_EPISODES_URL_QUERY_PARAMS = 'extend[podcasts]=editorialArtwork,feedUrl&include[podcast-episodes]=podcast&types=podcast-episodes&with=entitlements';
@@ -162,8 +162,6 @@ source.getHome = function () {
 
 source.searchSuggestions = function (query) {
     try {
-        
-
 		const selectedCountry = COUNTRY_CODES[_settings.countryIndex] ?? 'us';
     	
 		const requestPath = API_SEARCH_AUTOCOMPLETE_URL_TEMPLATE
@@ -499,13 +497,15 @@ source.getChannel = function(url) {
 			removeQueryParams(url),
 			showData.url,
 			URL_CHANNEL + podcastId,
+			`https://podcasts.apple.com/podcast/id${podcastId}`,
+			`https://podcasts.apple.com/podcast/${podcastId}`,
 			`https://podcasts.apple.com/us/podcast/id${podcastId}`,
 			`https://podcasts.apple.com/us/podcast/${podcastId}`,
 		]
 	); 
 
 	// Add all supported regionalized URLs
-	// doing this to solve issues data consistency issues from previous versions where a subscription was added with a different country code (localized from deeplink)
+	// doing this to solve data consistency issues from previous versions where a subscription was added with a different country code (localized from deeplink)
 	// but then even subscribed, the channel would not be recognized as subscribed in the channel details and media details
 	COUNTRY_CODES.forEach(countryCode => {
 		uniqueUrlAlternatives.add(`https://podcasts.apple.com/${countryCode}/podcast/id${podcastId}`);
@@ -578,7 +578,6 @@ class AppleChannelContentPager extends ContentPager {
 function fetchEpisodesPage(id, offset=0, channelUrl, isPlaylist=false) {
 
 	const urlEpisodes = API_GET_PODCAST_EPISODES_URL_TEMPLATE
-	.replace("{country}", 'us')
 	.replace("{podcast-id}", id)
 	.replace("{offset}", offset);
 	const resp = makeGetRequest(urlEpisodes, { throwOnError: false });
@@ -612,7 +611,6 @@ source.getContentDetails = function(url) {
 	}
 	
 	const episodeApiUrl = API_GET_EPISODE_DETAILS_URL_TEMPLATE
-	.replace("{country}", 'us')
 	.replace("{episode-id}", episodeId);
 
 	const responseData = makeGetRequest(episodeApiUrl, { useAuth: false });
@@ -804,9 +802,9 @@ source.getPlaylist = function (url) {
 			.filter(Boolean)
 			.sort((a, b) => b.datetime - a.datetime);
 		const thumbnailUrl = all.length ? (all?.[0]?.thumbnails?.sources?.[0].url ?? '') : '';
-		const savedEpisodesPlaylistUrl = PLATFORM_SAVED_EPISODES_URL.replace("{country}", COUNTRY_CODES[_settings.countryIndex]);
+
 		return new PlatformPlaylistDetails({
-			url: savedEpisodesPlaylistUrl,
+			url: PLATFORM_SAVED_EPISODES_URL,
 			id: new PlatformID(PLATFORM, 'playlistid', config.id),
 			author: new PlatformAuthorLink(
 				new PlatformID(PLATFORM, '', config.id),
@@ -1081,11 +1079,9 @@ class PublisherChannelPlaylistsPager extends PlaylistPager {
             return { playlists: [], hasMore: false };
         }
 
-        const countryCode = match[1];
         const channelId = match[3];
 
         const apiUrl = API_GET_PUBLISHER_CHANNEL_PODCASTS_URL_TEMPLATE
-            .replace('{country}', countryCode)
             .replace('{channel-id}', channelId)
             .replace('{offset}', offset);
 
@@ -1134,7 +1130,6 @@ class PodcastEpisodesPlaylistPager extends PlaylistPager {
         this.url = url;
         this.offset = offset + 20;  // Increment for next page
         this.id = result.id;
-        this.countryCode = result.countryCode;
         this.podcastData = result.podcastData;
     }
 
@@ -1174,7 +1169,6 @@ class PodcastEpisodesPlaylistPager extends PlaylistPager {
             playlists: [playlist], 
             hasMore: false,   // No pagination for podcast itself
             id: podcastId,
-            countryCode: 'us',
             podcastData: podcastData
         };
     }
@@ -1194,26 +1188,23 @@ class ApplePublisherChannelEpisodesPager extends ContentPager {
             return;
         }
         
-        const countryCode = match[1] || COUNTRY_CODES[_settings.countryIndex] || 'us';
         const channelId = match[3];
         
-        super(fetchPublisherChannelEpisodesPage(channelId, 0, countryCode), true);
+        super(fetchPublisherChannelEpisodesPage(channelId, 0), true);
         this.channelId = channelId;
-        this.countryCode = countryCode;
         this.offset = 20; // Start next page at offset 20
     }
 
     nextPage() {
-        this.results = fetchPublisherChannelEpisodesPage(this.channelId, this.offset, this.countryCode);
+        this.results = fetchPublisherChannelEpisodesPage(this.channelId, this.offset);
         this.hasMore = this.results.length > 0;
         this.offset += 20; // Increment offset for the next page
         return this;
     }
 }
 
-function fetchPublisherChannelEpisodesPage(channelId, offset=0, countryCode='us') {
+function fetchPublisherChannelEpisodesPage(channelId, offset=0) {
     const apiUrl = API_GET_PUBLISHER_CHANNEL_EPISODES_URL_TEMPLATE
-        .replace('{country}', countryCode)
         .replace('{channel-id}', channelId)
         .replace('{offset}', offset);
     

@@ -7,7 +7,7 @@
     "repositoryUrl": "https://gitlab.futo.org/videostreaming/plugins/apple-podcasts",
     "sourceUrl": "https://plugins.grayjay.app/ApplePodcasts/ApplePodcastsConfig.json",
     "scriptUrl": "./ApplePodcastsScript.js",
-    "version": 14,
+    "version": 15,
     "iconUrl": "./ApplePodcastsIcon.png",
     "id": "89ae4889-0420-4d16-ad6c-19c776b28f99",
     "subscriptionRateLimit": 10,
@@ -235,8 +235,18 @@
         "userAgent": "Mozilla/5.0 (iPad; CPU OS 14_7_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.2 Mobile/15E148 Safari/604.1"
     },
     "changelog": {
-        "11" : [
-            "Use container type as source name;"
+        "15": [
+            "Fix: Update script filename regex to support new naming convention;",
+            "Improvement: Add fallback to iTunes API for popular podcasts;"
+        ],
+        "14": [
+            "Fix: Some subscriptions not being recognized as subscribed in channel details and media details;",
+            "Improvement: Add support for embed channel URLs (embed.podcasts.apple.com);",
+            "Improvement: Standardizes Apple Podcasts URL handling;"
+        ],
+        "13": [
+            "Improvement: Add search autocomplete;",
+            "Improvement: Include podcast channels (networks) in channel search results;"
         ],
         "12" : [
             "Improvement: Add content recommendations and plugin setting to select source;",
@@ -247,14 +257,8 @@
             "Improvement: Add podcast information in episode description and podcast channels description;",
             "Improvement: Implement retry mechanism for improved network reliability;"
         ],
-        "13": [
-            "Improvement: Add search autocomplete;",
-            "Improvement: Include podcast channels (networks) in channel search results;"
-        ],
-        "14": [
-            "Fix: Some subscriptions not being recognized as subscribed in channel details and media details;",
-            "Improvement: Add support for embed channel URLs (embed.podcasts.apple.com);",
-            "Improvement: Standardizes Apple Podcasts URL handling;"
+        "11" : [
+            "Use container type as source name;"
         ]
     }
 }

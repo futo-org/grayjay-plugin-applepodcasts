@@ -28,7 +28,7 @@ const REGEX_EPISODE = /<script name="schema:podcast-episode" type="application\/
 const REGEX_EPISODE_ID = /[?&]i=([^&]+)/;
 const REGEX_IMAGE = /<meta property="og:image" content="(.*?)">/s
 const REGEX_CANONICAL_URL = /<link rel="canonical" href="(https:\/\/podcasts.apple.com\/[a-zA-Z]*\/podcast\/.*?)">/s
-const REGEX_MAIN_SCRIPT_FILENAME = /index-\w+\.js/;
+const REGEX_MAIN_SCRIPT_FILENAME = /index[~-]\w+\.js/;
 const REGEX_JWT = /\beyJhbGci[A-Za-z0-9-_]+?\.[A-Za-z0-9-_]+?\.[A-Za-z0-9-_]{43,}\b/;
 const REGEX_COUNTRY_CODE = /^https:\/\/(podcasts|embed\.podcasts)\.apple\.com\/([a-z]{2})\//;
 const REGEX_PUBLISHER_CHANNEL_URL = /https:\/\/podcasts\.apple\.com\/([a-z]{2})\/channel\/(?:([^\/]+)\/)?(?:id)?([0-9]+)/si;
@@ -92,32 +92,50 @@ source.enable = function(conf, settings, savedState){
 	  
 		if (!didSaveState) {
 		  // init state
-		  const indexHtml = makeGetRequest(PLATFORM_BASE_URL, {
-			  parseResponse: false,
-			  customHeaders: { 'User-Agent': config.authentication.userAgent }
-		  });
-	
-		  // Extract the main script file name from the index page
-		  const scriptFileName = extractScriptFileName(indexHtml);
-		  if(!scriptFileName) {
-			  throw new ScriptException("Failed to extract script file name");
+		  try {
+			  const indexHtml = makeGetRequest(PLATFORM_BASE_URL, {
+				  parseResponse: false,
+				  customHeaders: { 'User-Agent': config.authentication.userAgent }
+			  });
+
+			  if (indexHtml) {
+				  // Extract the main script file name from the index page
+				  const scriptFileName = extractScriptFileName(indexHtml);
+				  if(scriptFileName) {
+					  // Get the main script file content
+					  const scriptContent = makeGetRequest(`${PLATFORM_BASE_ASSETS_URL}${scriptFileName}`, {
+						  parseResponse: false,
+						  customHeaders: { 'User-Agent': config.authentication.userAgent }
+					  });
+
+					  if (scriptContent) {
+						  // Extract the JWT token from the main script content
+						  const token = extractJWT(scriptContent);
+
+						  if(token) {
+							  state.headers = { Authorization: `Bearer ${token}`, Origin: PLATFORM_BASE_URL, 'User-Agent': config.authentication.userAgent };
+							  log("Successfully extracted JWT token");
+						  } else {
+							  log("Failed to extract JWT token from script content");
+						  }
+					  } else {
+						  log("Failed to fetch script content");
+					  }
+				  } else {
+					  log("Failed to extract script file name from HTML");
+				  }
+			  } else {
+				  log("Failed to fetch index HTML");
+			  }
+		  } catch (e) {
+			  log("Error during JWT token extraction: " + e.message);
 		  }
-		  
-		  // Get the main script file content
-		  const scriptContent = makeGetRequest(`${PLATFORM_BASE_ASSETS_URL}${scriptFileName}`, {
-			  parseResponse: false,
-			  customHeaders: { 'User-Agent': config.authentication.userAgent }
-		  });
-	  
-		  // Extract the JWT token from the main script content
-		  const token = extractJWT(scriptContent);
-	
-		  if(!token) {
-			  throw new ScriptException("Failed to extract Token");
+
+		  // Set default headers even if JWT extraction failed
+		  if (!state.headers || Object.keys(state.headers).length === 0) {
+			  state.headers = { 'User-Agent': config.authentication.userAgent };
+			  log("Using fallback headers without JWT token");
 		  }
-	
-		  state.headers = { Authorization: `Bearer ${token}`, Origin: PLATFORM_BASE_URL, 'User-Agent': config.authentication.userAgent };
-		  
 		}
 	} catch(e) {
 		console.error(e);
@@ -138,8 +156,21 @@ source.getHome = function () {
         nextPage() {
             const data = makeGetRequest(this.url, { throwOnError: false });
 
-            if (!data)
+            if (!data) {
+                // Fallback to iTunes API for popular podcasts
+                log("Main trending API failed, trying iTunes API fallback for popular podcasts");
+                const itunesUrl = 'https://itunes.apple.com/search?media=podcast&limit=25&term=popular';
+                const itunesResult = makeGetRequest(itunesUrl, { throwOnError: false });
+
+                if (itunesResult && itunesResult.results) {
+                    const contents = itunesResult.results
+                        .map(x => itunesPodcastToPlatformVideo(x))
+                        .filter(Boolean);
+                    return new ContentPager(contents, false);
+                }
+
                 return new ContentPager([], false);
+            }
 
             const episodes = data?.results?.['podcast-episodes']?.find(x => x.chart == "top");
 
@@ -190,15 +221,27 @@ source.getSearchCapabilities = () => {
 };
 source.search = function (query, type, order, filters) {
 	const url = API_SEARCH_URL_TEMPLATE.replace("{0}", encodeURIComponent(query));
-    
+
 	const result = makeGetRequest(url, { throwOnError: false });
 	if (!result) {
+		// Fallback to iTunes API when main API fails
+		log("Main search API failed, trying iTunes API fallback");
+		const itunesUrl = API_SEARCH_PODCASTS_URL_TEMPLATE.replace("{query}", encodeURIComponent(query));
+		const itunesResult = makeGetRequest(itunesUrl, { throwOnError: false });
+
+		if (itunesResult && itunesResult.results) {
+			const results = itunesResult.results
+				.map(x => itunesPodcastToPlatformVideo(x))
+				.filter(Boolean);
+			return new ContentPager(results, false);
+		}
+
         return new ContentPager([], false);
     }
-    
+
     const episodes = result.results.groups
 	.find(x => x.groupId == "episode")?.data || [];
-        
+
 	const results = episodes
 	.map(x => podcastToPlatformVideo(x))
 	.filter(Boolean)
@@ -1063,6 +1106,47 @@ function podcastToPlatformVideo(x, author, isPlaylistParent = false) {
 		url: x.attributes.url,
 		isLive: false
 	})
+}
+
+function itunesPodcastToPlatformVideo(x) {
+	// iTunes API returns podcast information, not individual episodes
+	// We'll create a "video" entry that represents the podcast itself
+	try {
+		const podcastId = x.collectionId?.toString() || x.trackId?.toString();
+		if (!podcastId) return null;
+
+		const podcastUrl = `https://podcasts.apple.com/us/podcast/${podcastId}`;
+
+		const author = new PlatformAuthorLink(
+			new PlatformID(PLATFORM, podcastId, config.id),
+			x.artistName || x.collectionName || '',
+			podcastUrl,
+			x.artworkUrl600 || x.artworkUrl100 || ""
+		);
+
+		const id = new PlatformID(PLATFORM, podcastId, config?.id);
+		const name = x.collectionName || x.trackName || '';
+		const description = x.description || '';
+
+		// Use the podcast's release date or current date
+		const uploadDate = x.releaseDate ? parseInt(new Date(x.releaseDate).getTime() / 1000) : parseInt(Date.now() / 1000);
+
+		return new PlatformVideo({
+			id,
+			name: name + " (Podcast)",
+			description: description,
+			thumbnails: new Thumbnails([new Thumbnail(x.artworkUrl600 || x.artworkUrl100 || "", 0)]),
+			author,
+			uploadDate,
+			duration: -1, // trackTimeMillis for podcasts represents preview/intro duration, not episode length
+			viewCount: -1,
+			url: podcastUrl,
+			isLive: false
+		});
+	} catch (e) {
+		log("Error converting iTunes podcast to platform video: " + e.message);
+		return null;
+	}
 }
 
 class PublisherChannelPlaylistsPager extends PlaylistPager {

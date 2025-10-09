@@ -35,6 +35,10 @@ const REGEX_PUBLISHER_CHANNEL_URL = /https:\/\/podcasts\.apple\.com\/([a-z]{2})\
 
 const SAVED_EPISODES_KEY  = 'applepodcasts:playlist:savedepisodes';
 
+// API pagination constants
+const PODCAST_EPISODES_PAGE_SIZE = 10;  // Episodes per page for podcast episode listings
+const PUBLISHER_CHANNEL_PAGE_SIZE = 20; // Items per page for publisher channel content
+
 let state = {
 	headers: {},
 	channel: {}
@@ -602,23 +606,21 @@ source.getChannelPlaylists = function(url) {
 
 class AppleChannelContentPager extends ContentPager {
 	constructor(id, channelUrl, isPlaylist) {
-		super(fetchEpisodesPage(id, 0, channelUrl, isPlaylist), true);
-		this.offset = this.results.length;
+		super(fetchEpisodesPage(id, channelUrl, 0, isPlaylist), true);
+		this.offset = PODCAST_EPISODES_PAGE_SIZE; // Start at next page offset (first page is always offset 0)
 		this.id = id;
 		this.channelUrl = channelUrl;
 		this.isPlaylist = isPlaylist;
-		
 	}
 
 	nextPage() {
-		this.offset += 10;
-		
-		this.results = fetchEpisodesPage(this.id, this.offset, this.channelUrl, this.isPlaylist);
+		this.results = fetchEpisodesPage(this.id, this.channelUrl, this.offset, this.isPlaylist);
 		this.hasMore = this.results.length > 0;
+		this.offset += PODCAST_EPISODES_PAGE_SIZE; // Always increment by API page size, not by filtered results count
 		return this;
 	}
 }
-function fetchEpisodesPage(id, offset=0, channelUrl, isPlaylist=false) {
+function fetchEpisodesPage(id, channelUrl, offset=0, isPlaylist=false) {
 
 	const urlEpisodes = API_GET_PODCAST_EPISODES_URL_TEMPLATE
 	.replace("{podcast-id}", id)
@@ -629,9 +631,9 @@ function fetchEpisodesPage(id, offset=0, channelUrl, isPlaylist=false) {
 
 	const channel = source.getChannel(channelUrl); 	// cached request
 	const author = new PlatformAuthorLink(
-		new PlatformID(PLATFORM, id, config.id), 
-		channel.name, 
-		channel.url, 
+		new PlatformID(PLATFORM, id, config.id),
+		channel.name,
+		channel.url,
 		channel.thumbnail
 	);
 
@@ -1057,7 +1059,9 @@ function podcastToPlatformVideo(x, author, isPlaylistParent = false) {
 
 	let isSubscriberOnly = false;
 
-	if (!durationInMilliseconds) {
+	// Only mark as subscriber-only if there's no asset URL (unplayable) and subscription offers exist
+	// Episodes without duration but with asset URL are regular episodes with missing metadata
+	if (!x.attributes.assetUrl) {
 		isSubscriberOnly = (x?.attributes?.offers ?? []).some(e => e.kind == 'subscribe');
 	}
 
@@ -1154,7 +1158,7 @@ class PublisherChannelPlaylistsPager extends PlaylistPager {
         const result = PublisherChannelPlaylistsPager.fetchChannelPlaylists(url, offset);
         super(result.playlists, result.hasMore);
         this.url = url;
-        this.offset = offset + 20;  // Increment offset for next page
+        this.offset = offset + PUBLISHER_CHANNEL_PAGE_SIZE;
     }
 
     static fetchChannelPlaylists(url, offset) {
@@ -1202,7 +1206,7 @@ class PublisherChannelPlaylistsPager extends PlaylistPager {
         const result = PublisherChannelPlaylistsPager.fetchChannelPlaylists(this.url, this.offset);
         this.results = result.playlists;
         this.hasMore = result.hasMore;
-        this.offset += 20;  // Increment offset for next page
+        this.offset += PUBLISHER_CHANNEL_PAGE_SIZE;
         return this;
     }
 }
@@ -1212,7 +1216,7 @@ class PodcastEpisodesPlaylistPager extends PlaylistPager {
         const result = PodcastEpisodesPlaylistPager.fetchPodcastPlaylist(url, offset);
         super(result.playlists, result.hasMore);
         this.url = url;
-        this.offset = offset + 20;  // Increment for next page
+        this.offset = offset + PUBLISHER_CHANNEL_PAGE_SIZE;
         this.id = result.id;
         this.podcastData = result.podcastData;
     }
@@ -1271,18 +1275,18 @@ class ApplePublisherChannelEpisodesPager extends ContentPager {
             super([], false);
             return;
         }
-        
+
         const channelId = match[3];
-        
+
         super(fetchPublisherChannelEpisodesPage(channelId, 0), true);
         this.channelId = channelId;
-        this.offset = 20; // Start next page at offset 20
+        this.offset = PUBLISHER_CHANNEL_PAGE_SIZE; // Start next page offset
     }
 
     nextPage() {
         this.results = fetchPublisherChannelEpisodesPage(this.channelId, this.offset);
         this.hasMore = this.results.length > 0;
-        this.offset += 20; // Increment offset for the next page
+        this.offset += PUBLISHER_CHANNEL_PAGE_SIZE;
         return this;
     }
 }

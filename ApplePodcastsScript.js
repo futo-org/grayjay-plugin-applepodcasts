@@ -52,6 +52,9 @@ const REGEX_PUBLISHER_CHANNEL_URL = /https:\/\/podcasts\.apple\.com\/([a-z]{2})\
 
 const SAVED_EPISODES_KEY  = 'applepodcasts:playlist:savedepisodes';
 
+const IS_DESKTOP = bridge.buildPlatform === "desktop";
+const IMPERSONATION_TARGET = IS_DESKTOP ? 'chrome136' : 'chrome131_android';
+
 // API pagination constants
 const PODCAST_EPISODES_PAGE_SIZE = 10;  // Episodes per page for podcast episode listings
 const PUBLISHER_CHANNEL_PAGE_SIZE = 20; // Items per page for publisher channel content
@@ -1273,6 +1276,19 @@ function getVideoSource(episodeData) {
 	const duration = episodeData.attributes.durationInMilliseconds 
 		? parseInt(episodeData.attributes.durationInMilliseconds / 1000)
 		: 0;
+
+	const sourceDef = {
+		url: episodeData.attributes.assetUrl,
+		duration: duration,
+		requestModifier: {
+			options: {
+				applyAuthClient: "",
+				applyCookieClient: "",
+				applyOtherHeaders: false,
+				impersonateTarget: IMPERSONATION_TARGET
+			}
+		}
+	};
 		
 	switch(episodeData.attributes.mediaKind) {
 		case "audio":
@@ -1281,8 +1297,7 @@ function getVideoSource(episodeData) {
 					name: "audio/mp3",
 					container: "audio/mp3",
 					bitrate: 0,
-					url: episodeData.attributes.assetUrl,
-					duration: duration,
+					...sourceDef
 				})
 			]);
 		case "video":
@@ -1290,8 +1305,7 @@ function getVideoSource(episodeData) {
 				new VideoUrlSource({
 					name: "video/mp4",
 					container: "video/mp4",
-					url: episodeData.attributes.assetUrl,
-					duration: duration,
+					...sourceDef
 				})
 			]);
 		default:

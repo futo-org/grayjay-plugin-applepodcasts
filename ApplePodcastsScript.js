@@ -41,13 +41,10 @@ const REGEX_CONTENT_URL = /https:\/\/podcasts\.apple\.com\/[a-zA-Z]*\/podcast\/.
 const REGEX_CHANNEL_URL = /https:\/\/(podcasts|embed\.podcasts)\.apple\.com\/[a-zA-Z]{2}\/podcast(?:\/[^/]+)?\/(?:id)?([0-9]+)/si;
 const REGEX_CHANNEL_SHOW = /<script id=schema:show type="application\/ld\+json">(.*?)<\/script>/s
 const REGEX_CHANNEL_SERVER_DATA = /<script\s+(?:[^>]*?\s+)?(?:id=["']serialized-server-data["']\s+type=["']application\/(?:ld\+)?json["']|type=["']application\/(?:ld\+)?json["']\s+id=["']serialized-server-data["'])\s*>(.*?)<\/script>/s;
-const REGEX_EPISODE = /<script name="schema:podcast-episode" type="application\/ld\+json">(.*?)<\/script>/s
 const REGEX_EPISODE_ID = /[?&]i=([^&]+)/;
 const REGEX_IMAGE = /<meta property="og:image" content="(.*?)">/s
-const REGEX_CANONICAL_URL = /<link rel="canonical" href="(https:\/\/podcasts.apple.com\/[a-zA-Z]*\/podcast\/.*?)">/s
 const REGEX_MAIN_SCRIPT_FILENAME = /index[~-]\w+\.js/;
 const REGEX_JWT = /\beyJhbGci[A-Za-z0-9-_]+?\.[A-Za-z0-9-_]+?\.[A-Za-z0-9-_]{43,}\b/;
-const REGEX_COUNTRY_CODE = /^https:\/\/(podcasts|embed\.podcasts)\.apple\.com\/([a-z]{2})\//;
 const REGEX_PUBLISHER_CHANNEL_URL = /https:\/\/podcasts\.apple\.com\/([a-z]{2})\/channel\/(?:([^\/]+)\/)?(?:id)?([0-9]+)/si;
 
 const SAVED_EPISODES_KEY  = 'applepodcasts:playlist:savedepisodes';
@@ -58,6 +55,34 @@ const IMPERSONATION_TARGET = IS_DESKTOP ? 'chrome136' : 'chrome131_android';
 // API pagination constants
 const PODCAST_EPISODES_PAGE_SIZE = 10;  // Episodes per page for podcast episode listings
 const PUBLISHER_CHANNEL_PAGE_SIZE = 20; // Items per page for publisher channel content
+
+// Toast messages
+const TOAST_MSG_FALLBACK_GENERIC = 'using fallback.';
+const TOAST_MSG_FALLBACK_TOP_PODCASTS = 'Using fallback: Top Podcasts';
+const TOAST_MSG_FALLBACK_ITUNES_SEARCH = 'Using fallback: iTunes Search';
+
+// API limits
+const DEFAULT_HOME_LIMIT = 25;
+
+// Time conversion constants
+const MS_PER_SECOND = 1000;
+
+// Default country code
+const DEFAULT_COUNTRY_CODE = 'us';
+
+// Content ratings
+const CONTENT_RATING_EXPLICIT = 'Explicit';
+const CONTENT_RATING_EXPLICIT_LOWER = 'explicit';
+
+// Media kinds
+const MEDIA_KIND_AUDIO = 'audio';
+const MEDIA_KIND_VIDEO = 'video';
+
+// Subscriber offer kind
+const OFFER_KIND_SUBSCRIBE = 'subscribe';
+
+// Pre-compiled regex for URL replacement
+const REGEX_URL_COUNTRY_CODE_REPLACEMENT = /https:\/\/podcasts\.apple\.com\/[a-z]{2}/;
 
 let state = {
 	headers: {},
@@ -75,157 +100,6 @@ let _settings = {
 	contentRecommendationOptionIndex: 0,
 	hideSubscriberOnly: false
 };
-
-// Helper functions
-
-/**
- * Create a PlatformID for this plugin
- * @param {string} id - The platform-specific ID
- * @returns {PlatformID} Platform ID object
- */
-function createPlatformID(id) {
-	return new PlatformID(PLATFORM, id, config?.id);
-}
-
-/**
- * Create a PlatformAuthorLink
- * @param {string} authorId - The author/podcast ID
- * @param {string} authorName - The author/podcast name
- * @param {string} authorUrl - The author/podcast URL
- * @param {string} thumbnail - The thumbnail URL
- * @returns {PlatformAuthorLink} Platform author link object
- */
-function createPlatformAuthor(authorId, authorName, authorUrl, thumbnail) {
-	return new PlatformAuthorLink(
-		createPlatformID(authorId),
-		authorName,
-		authorUrl,
-		thumbnail
-	);
-}
-
-/**
- * Extract best quality artwork URL from iTunes API response
- * @param {Object} data - iTunes API response object
- * @returns {string} Best quality artwork URL
- */
-function getBestArtworkUrl(data) {
-	return data.artworkUrl600 || data.artworkUrl160 || data.artworkUrl100 || data.artworkUrl60 || "";
-}
-
-/**
- * Convert date string or Date object to Unix timestamp
- * @param {string|Date} date - Date string or Date object
- * @returns {number} Unix timestamp in seconds
- */
-function toUnixTimestamp(date) {
-	if (!date) return parseInt(Date.now() / 1000);
-	return parseInt(new Date(date).getTime() / 1000);
-}
-
-/**
- * Convert milliseconds to seconds
- * @param {number} millis - Duration in milliseconds
- * @returns {number} Duration in seconds
- */
-function millisToSeconds(millis) {
-	return millis ? parseInt(millis / 1000) : 0;
-}
-
-/**
- * Build a podcast URL with the given ID
- * @param {string} podcastId - The podcast ID
- * @param {string} country - Country code (default: 'us')
- * @returns {string} Podcast URL
- */
-function buildPodcastUrl(podcastId, country = 'us') {
-	return URL_PODCAST_TEMPLATE
-		.replace('{country}', country)
-		.replace('{podcast-id}', podcastId);
-}
-
-/**
- * Build a podcast URL with ID prefix (e.g., id123456)
- * @param {string} podcastId - The podcast ID
- * @param {string} country - Country code (default: 'us')
- * @returns {string} Podcast URL with id prefix
- */
-function buildPodcastUrlWithIdPrefix(podcastId, country = 'us') {
-	return URL_PODCAST_WITH_ID_PREFIX_TEMPLATE
-		.replace('{country}', country)
-		.replace('{podcast-id}', podcastId);
-}
-
-/**
- * Build a podcast URL without country code
- * @param {string} podcastId - The podcast ID
- * @returns {string} Podcast URL without country
- */
-function buildPodcastUrlNoCountry(podcastId) {
-	return URL_PODCAST_NO_COUNTRY_TEMPLATE.replace('{podcast-id}', podcastId);
-}
-
-/**
- * Build a podcast URL without country code, with ID prefix
- * @param {string} podcastId - The podcast ID
- * @returns {string} Podcast URL without country, with id prefix
- */
-function buildPodcastUrlNoCountryWithIdPrefix(podcastId) {
-	return URL_PODCAST_NO_COUNTRY_WITH_ID_PREFIX_TEMPLATE.replace('{podcast-id}', podcastId);
-}
-
-/**
- * Build a channel URL with the given ID
- * @param {string} channelId - The channel ID
- * @param {string} country - Country code (default: 'us')
- * @returns {string} Channel URL
- */
-function buildChannelUrl(channelId, country = 'us') {
-	return URL_CHANNEL_TEMPLATE
-		.replace('{country}', country)
-		.replace('{channel-id}', channelId);
-}
-
-/**
- * Build an episode URL with the given podcast and episode IDs
- * @param {string} podcastId - The podcast ID
- * @param {string} episodeId - The episode ID
- * @param {string} country - Country code (default: 'us')
- * @returns {string} Episode URL
- */
-function buildEpisodeUrl(podcastId, episodeId, country = 'us') {
-	return URL_EPISODE_TEMPLATE
-		.replace('{country}', country)
-		.replace('{podcast-id}', podcastId)
-		.replace('{episode-id}', episodeId);
-}
-
-/**
- * Enrich episode description with podcast information
- * @param {string} baseDescription - The base episode description
- * @param {string} podcastId - The podcast ID
- * @returns {string} Enriched description with podcast info appended
- */
-function enrichDescriptionWithPodcastInfo(baseDescription, podcastId) {
-	let description = baseDescription || '';
-
-	if (!podcastId) {
-		return description;
-	}
-
-	try {
-		const podcastUrl = buildPodcastUrl(podcastId);
-		const show = source.getChannel(podcastUrl);
-		if (show) {
-			description += '<h1>Podcast Information</h1>';
-			description += show.description;
-		}
-	} catch (e) {
-		log("Could not get podcast channel details for episode enrichment: " + e.message);
-	}
-
-	return description;
-}
 
 //Source Methods
 source.enable = function(conf, settings, savedState){
@@ -320,7 +194,7 @@ source.enable = function(conf, settings, savedState){
 
 source.getHome = function () {
 
-    const selectedCountry = COUNTRY_CODES[_settings.countryIndex] ?? 'us';
+    const selectedCountry = getUserCountry();
     const requestPath = API_GET_TRENDING_EPISODES_URL_PATH_TEMPLATE.replace("{country}", selectedCountry);
 
     class RecommendedVideoPager extends VideoPager {
@@ -333,18 +207,34 @@ source.getHome = function () {
             const data = makeGetRequest(this.url, { throwOnError: false });
 
             if (!data) {
-                // Fallback chain: v2 API -> iTunes Search
-                log("Main trending API failed, trying v2 Marketing Tools API fallback");
+                const userCountry = getUserCountry().toLowerCase();
 
-                const userCountry = (COUNTRY_CODES[_settings.countryIndex] ?? 'us').toLowerCase();
+                // Fallback chain: v2 top episodes -> v2 top podcasts -> iTunes Search
+                log("Main trending API failed, trying v2 Marketing Tools top episodes fallback");
+                const v2EpisodesUrl = API_V2_TOP_EPISODES_URL_TEMPLATE
+                    .replace('{country}', userCountry)
+                    .replace('{limit}', DEFAULT_HOME_LIMIT.toString());
+                const v2EpisodesResult = makeGetRequest(v2EpisodesUrl, { throwOnError: false });
+
+                if (v2EpisodesResult && v2EpisodesResult.feed && v2EpisodesResult.feed.results) {
+                    log("v2 top episodes fallback successful");
+                    const contents = v2EpisodesResult.feed.results
+                        .map(episode => v2EpisodeToPlatformVideo(episode))
+                        .filter(Boolean);
+                    if (contents.length > 0) {
+                        return new ContentPager(contents, false);
+                    }
+                }
+
+                log("v2 top episodes failed, trying v2 Marketing Tools top podcasts fallback");
                 const v2Url = API_V2_TOP_PODCASTS_URL_TEMPLATE
                     .replace('{country}', userCountry)
-                    .replace('{limit}', '25');
+                    .replace('{limit}', DEFAULT_HOME_LIMIT.toString());
                 const v2Result = makeGetRequest(v2Url, { throwOnError: false });
 
                 if (v2Result && v2Result.feed && v2Result.feed.results) {
                     log("v2 API fallback successful");
-                    bridge.toast('Using fallback: Top Podcasts');
+                    bridge.toast(TOAST_MSG_FALLBACK_TOP_PODCASTS);
                     const contents = v2Result.feed.results
                         .map(podcast => v2PodcastToPlatformPlaylist(podcast))
                         .filter(Boolean);
@@ -358,7 +248,7 @@ source.getHome = function () {
 
                 if (itunesResult && itunesResult.results) {
                     log("iTunes Search fallback successful");
-                    bridge.toast('Using fallback: iTunes Search');
+                    bridge.toast(TOAST_MSG_FALLBACK_ITUNES_SEARCH);
                     const contents = itunesResult.results
                         .map(x => itunesPodcastToPlatformPlaylist(x))
                         .filter(Boolean);
@@ -389,7 +279,7 @@ source.getHome = function () {
 
 source.searchSuggestions = function (query) {
     try {
-		const selectedCountry = COUNTRY_CODES[_settings.countryIndex] ?? 'us';
+		const selectedCountry = getUserCountry();
     	
 		const requestPath = API_SEARCH_AUTOCOMPLETE_URL_TEMPLATE
 			.replace("{country}", selectedCountry)
@@ -455,8 +345,8 @@ source.searchChannels = function(query) {
 	// Prepare URLs for both API requests
 	const encodedQuery = encodeURIComponent(query);
 	const urlRequestPodcasts = API_SEARCH_PODCASTS_URL_TEMPLATE.replace("{query}", encodedQuery);
-	
-	const selectedCountry = COUNTRY_CODES[_settings.countryIndex] ?? 'us';
+
+	const selectedCountry = getUserCountry();
 	const urlRequestPodcastChannel = API_SEARCH_PODCAST_CHANNELS_URL_TEMPLATE
 		.replace("{country}", selectedCountry)
 		.replace("{query}", encodedQuery);
@@ -612,7 +502,7 @@ source.getChannel = function(url) {
                 const podcastInfo = itunesData.results[0];
                 log(`iTunes API fallback successful for channel ${channelId}`);
 
-				bridge.toast('using fallback.')
+				bridge.toast(TOAST_MSG_FALLBACK_GENERIC)
 
                 state.channel[channelId] = new PlatformChannel({
                     id: new PlatformID(PLATFORM, channelId, config.id),
@@ -652,6 +542,9 @@ source.getChannel = function(url) {
     
     // Regular podcast channel handling
     const matchUrl = url.match(REGEX_CHANNEL_URL);
+    if (!matchUrl) {
+        throw new ScriptException(`Invalid channel URL: ${url}`);
+    }
     const podcastId = matchUrl[2];
 
     // check if channel is cached and return it
@@ -680,24 +573,9 @@ source.getChannel = function(url) {
         if (itunesData && itunesData.results && itunesData.results.length > 0) {
             const podcastInfo = itunesData.results[0];
             log(`iTunes API fallback successful for podcast ${podcastId}`);
-bridge.toast('using fallback.')
-            const uniqueUrlAlternatives = new Set([
-                url,
-                removeQueryParams(url),
-                URL_CHANNEL + podcastId,
-                buildPodcastUrlNoCountryWithIdPrefix(podcastId),
-                buildPodcastUrlNoCountry(podcastId),
-                buildPodcastUrlWithIdPrefix(podcastId, 'us'),
-                buildPodcastUrl(podcastId, 'us'),
-            ]);
+			bridge.toast(TOAST_MSG_FALLBACK_GENERIC);
 
-            // Add all supported regionalized URLs
-            COUNTRY_CODES.forEach(countryCode => {
-                uniqueUrlAlternatives.add(buildPodcastUrlWithIdPrefix(podcastId, countryCode));
-                uniqueUrlAlternatives.add(buildPodcastUrl(podcastId, countryCode));
-            });
-
-            const urlAlternatives = Array.from(uniqueUrlAlternatives);
+            const urlAlternatives = generatePodcastUrlAlternatives(podcastId, url);
 
             state.channel[podcastId] = new PlatformChannel({
                 id: new PlatformID(PLATFORM, podcastId, config.id),
@@ -802,29 +680,14 @@ bridge.toast('using fallback.')
 
     const banner = matchFirstOrDefault(htmlContent, REGEX_IMAGE);
 
-	const uniqueUrlAlternatives = new Set(
-		[
-			url,
-			removeQueryParams(url),
-			showData.url,
-			URL_CHANNEL + podcastId,
-			buildPodcastUrlNoCountryWithIdPrefix(podcastId),
-			buildPodcastUrlNoCountry(podcastId),
-			buildPodcastUrlWithIdPrefix(podcastId, 'us'),
-			buildPodcastUrl(podcastId, 'us'),
-		]
-	);
+	// Generate URL alternatives, including showData.url and its regionalized versions
+	const urlAlternatives = generatePodcastUrlAlternatives(podcastId, url);
 
-	// Add all supported regionalized URLs
-	// doing this to solve data consistency issues from previous versions where a subscription was added with a different country code (localized from deeplink)
-	// but then even subscribed, the channel would not be recognized as subscribed in the channel details and media details
+	// Add showData.url and its regionalized versions
+	urlAlternatives.push(showData.url);
 	COUNTRY_CODES.forEach(countryCode => {
-		uniqueUrlAlternatives.add(buildPodcastUrlWithIdPrefix(podcastId, countryCode));
-		uniqueUrlAlternatives.add(buildPodcastUrl(podcastId, countryCode));
-		uniqueUrlAlternatives.add(showData.url.replace(/https:\/\/podcasts\.apple\.com\/[a-z]{2}/, `https://podcasts.apple.com/${countryCode}`));
+		urlAlternatives.push(showData.url.replace(REGEX_URL_COUNTRY_CODE_REPLACEMENT, `https://podcasts.apple.com/${countryCode}`));
 	});
-
-	const urlAlternatives = Array.from(uniqueUrlAlternatives);
 
     // save channel info to state (cache)
     state.channel[podcastId] = new PlatformChannel({
@@ -836,7 +699,7 @@ bridge.toast('using fallback.')
         description,
         url: buildPodcastUrl(podcastId, 'us'),
         links,
-		urlAlternatives
+		urlAlternatives: Array.from(new Set(urlAlternatives))
     });
 
     return state.channel[podcastId];
@@ -904,7 +767,7 @@ function fetchEpisodesPage(id, channelUrl, offset=0, isPlaylist=false) {
 				// First result is the podcast itself, rest are episodes (max 200)
 				const podcastInfo = itunesResp.results[0];
 				const episodes = itunesResp.results.slice(1);
-bridge.toast('using fallback.')
+				bridge.toast(TOAST_MSG_FALLBACK_GENERIC)
 				// Create author from podcast info
 				const author = new PlatformAuthorLink(
 					new PlatformID(PLATFORM, id, config.id),
@@ -958,22 +821,22 @@ source.getContentDetails = function(url) {
 		const cachedEpisode = state.episodeDetails[episodeId];
 		if (cachedEpisode && cachedEpisode.episode.episodeUrl) {
 			log(`Using cached episode details from iTunes API for episode ${episodeId}`);
-			bridge.toast('using fallback.')
+			bridge.toast(TOAST_MSG_FALLBACK_GENERIC)
 
 			const episode = cachedEpisode.episode;
 			const author = cachedEpisode.author;
 
 			// Filter explicit content
-			if (episode.contentAdvisoryRating === 'Explicit' && !_settings.allowExplicit) {
+			if (episode.contentAdvisoryRating === CONTENT_RATING_EXPLICIT && !_settings.allowExplicit) {
 				throw new UnavailableException("Explicit videos can be allowed using the plugin settings");
 			}
 
 			const uploadDate = episode.releaseDate
-				? parseInt(new Date(episode.releaseDate).getTime() / 1000)
-				: parseInt(Date.now() / 1000);
+				? parseInt(new Date(episode.releaseDate).getTime() / MS_PER_SECOND)
+				: parseInt(Date.now() / MS_PER_SECOND);
 
 			const duration = episode.trackTimeMillis
-				? parseInt(episode.trackTimeMillis / 1000)
+				? parseInt(episode.trackTimeMillis / MS_PER_SECOND)
 				: 0;
 
 			let description = episode.description || '';
@@ -993,8 +856,8 @@ source.getContentDetails = function(url) {
 			}
 
 			// Determine media kind from file extension
-			const episodeContentType = episode.episodeContentType || 'audio';
-			const mediaKind = episodeContentType === 'video' ? 'video' : 'audio';
+			const episodeContentType = episode.episodeContentType || MEDIA_KIND_AUDIO;
+			const mediaKind = episodeContentType === MEDIA_KIND_VIDEO ? MEDIA_KIND_VIDEO : MEDIA_KIND_AUDIO;
 
 			// Create a compatible episodeData structure for getVideoSource
 			const episodeData = {
@@ -1048,7 +911,7 @@ source.getContentDetails = function(url) {
 		throw new UnavailableException("This episode is not available yet");
 	}
 
-	if(episodeData.attributes.contentRating == 'explicit' && !_settings["allowExplicit"]) {
+	if(episodeData.attributes.contentRating == CONTENT_RATING_EXPLICIT_LOWER && !_settings["allowExplicit"]) {
 		throw new UnavailableException("Explicit videos can be allowed using the plugin settings");
 	}
 
@@ -1070,8 +933,8 @@ source.getContentDetails = function(url) {
 			show.url, 
 			getArtworkUrl(podcastData.attributes.artwork.url)
 		),
-		uploadDate: parseInt(new Date(episodeData.attributes.releaseDateTime).getTime() / 1000),
-		duration: parseInt(episodeData.attributes.durationInMilliseconds / 1000),
+		uploadDate: parseInt(new Date(episodeData.attributes.releaseDateTime).getTime() / MS_PER_SECOND),
+		duration: parseInt(episodeData.attributes.durationInMilliseconds / MS_PER_SECOND),
 		viewCount: -1,
 		url: episodeData.attributes.url,
 		isLive: false,
@@ -1244,6 +1107,197 @@ source.getPlaylist = function (url) {
 	throw new ScriptException('Invalid playlist url');
 }
 
+
+// Helper functions
+
+/**
+ * Create a PlatformID for this plugin
+ * @param {string} id - The platform-specific ID
+ * @returns {PlatformID} Platform ID object
+ */
+function createPlatformID(id) {
+	return new PlatformID(PLATFORM, id, config?.id);
+}
+
+/**
+ * Create a PlatformAuthorLink
+ * @param {string} authorId - The author/podcast ID
+ * @param {string} authorName - The author/podcast name
+ * @param {string} authorUrl - The author/podcast URL
+ * @param {string} thumbnail - The thumbnail URL
+ * @returns {PlatformAuthorLink} Platform author link object
+ */
+function createPlatformAuthor(authorId, authorName, authorUrl, thumbnail) {
+	return new PlatformAuthorLink(
+		createPlatformID(authorId),
+		authorName,
+		authorUrl,
+		thumbnail
+	);
+}
+
+/**
+ * Extract best quality artwork URL from iTunes API response
+ * @param {Object} data - iTunes API response object
+ * @returns {string} Best quality artwork URL
+ */
+function getBestArtworkUrl(data) {
+	return data.artworkUrl600 || data.artworkUrl160 || data.artworkUrl100 || data.artworkUrl60 || "";
+}
+
+/**
+ * Convert date string or Date object to Unix timestamp
+ * @param {string|Date} date - Date string or Date object
+ * @returns {number} Unix timestamp in seconds
+ */
+function toUnixTimestamp(date) {
+	if (!date) return parseInt(Date.now() / MS_PER_SECOND);
+	return parseInt(new Date(date).getTime() / MS_PER_SECOND);
+}
+
+/**
+ * Convert milliseconds to seconds
+ * @param {number} millis - Duration in milliseconds
+ * @returns {number} Duration in seconds
+ */
+function millisToSeconds(millis) {
+	return millis ? parseInt(millis / MS_PER_SECOND) : 0;
+}
+
+/**
+ * Build a podcast URL with the given ID
+ * @param {string} podcastId - The podcast ID
+ * @param {string} country - Country code (default: 'us')
+ * @returns {string} Podcast URL
+ */
+function buildPodcastUrl(podcastId, country = DEFAULT_COUNTRY_CODE) {
+	return URL_PODCAST_TEMPLATE
+		.replace('{country}', country)
+		.replace('{podcast-id}', podcastId);
+}
+
+/**
+ * Build a podcast URL with ID prefix (e.g., id123456)
+ * @param {string} podcastId - The podcast ID
+ * @param {string} country - Country code (default: 'us')
+ * @returns {string} Podcast URL with id prefix
+ */
+function buildPodcastUrlWithIdPrefix(podcastId, country = DEFAULT_COUNTRY_CODE) {
+	return URL_PODCAST_WITH_ID_PREFIX_TEMPLATE
+		.replace('{country}', country)
+		.replace('{podcast-id}', podcastId);
+}
+
+/**
+ * Build a podcast URL without country code
+ * @param {string} podcastId - The podcast ID
+ * @returns {string} Podcast URL without country
+ */
+function buildPodcastUrlNoCountry(podcastId) {
+	return URL_PODCAST_NO_COUNTRY_TEMPLATE.replace('{podcast-id}', podcastId);
+}
+
+/**
+ * Build a podcast URL without country code, with ID prefix
+ * @param {string} podcastId - The podcast ID
+ * @returns {string} Podcast URL without country, with id prefix
+ */
+function buildPodcastUrlNoCountryWithIdPrefix(podcastId) {
+	return URL_PODCAST_NO_COUNTRY_WITH_ID_PREFIX_TEMPLATE.replace('{podcast-id}', podcastId);
+}
+
+/**
+ * Build a channel URL with the given ID
+ * @param {string} channelId - The channel ID
+ * @param {string} country - Country code (default: 'us')
+ * @returns {string} Channel URL
+ */
+function buildChannelUrl(channelId, country = DEFAULT_COUNTRY_CODE) {
+	return URL_CHANNEL_TEMPLATE
+		.replace('{country}', country)
+		.replace('{channel-id}', channelId);
+}
+
+/**
+ * Build an episode URL with the given podcast and episode IDs
+ * @param {string} podcastId - The podcast ID
+ * @param {string} episodeId - The episode ID
+ * @param {string} country - Country code (default: 'us')
+ * @returns {string} Episode URL
+ */
+function buildEpisodeUrl(podcastId, episodeId, country = DEFAULT_COUNTRY_CODE) {
+	return URL_EPISODE_TEMPLATE
+		.replace('{country}', country)
+		.replace('{podcast-id}', podcastId)
+		.replace('{episode-id}', episodeId);
+}
+
+/**
+ * Enrich episode description with podcast information
+ * @param {string} baseDescription - The base episode description
+ * @param {string} podcastId - The podcast ID
+ * @returns {string} Enriched description with podcast info appended
+ */
+function enrichDescriptionWithPodcastInfo(baseDescription, podcastId) {
+	let description = baseDescription || '';
+
+	if (!podcastId) {
+		return description;
+	}
+
+	try {
+		const podcastUrl = buildPodcastUrl(podcastId);
+		const show = source.getChannel(podcastUrl);
+		if (show) {
+			description += '<h1>Podcast Information</h1>';
+			description += show.description;
+		}
+	} catch (e) {
+		log("Could not get podcast channel details for episode enrichment: " + e.message);
+	}
+
+	return description;
+}
+
+/**
+ * Get the user's selected country code from settings
+ * @returns {string} The country code (e.g., 'us', 'gb', 'ca')
+ */
+function getUserCountry() {
+	return COUNTRY_CODES[_settings.countryIndex] ?? DEFAULT_COUNTRY_CODE;
+}
+
+/**
+ * Generate all URL alternatives for a podcast ID
+ * This is used to ensure subscription consistency across different URL formats
+ * @param {string} podcastId - The podcast ID
+ * @param {string} baseUrl - The base URL (optional, for additional alternatives)
+ * @returns {string[]} Array of URL alternatives
+ */
+function generatePodcastUrlAlternatives(podcastId, baseUrl = null) {
+	const uniqueUrlAlternatives = new Set([
+		URL_CHANNEL + podcastId,
+		buildPodcastUrlNoCountryWithIdPrefix(podcastId),
+		buildPodcastUrlNoCountry(podcastId),
+		buildPodcastUrlWithIdPrefix(podcastId, DEFAULT_COUNTRY_CODE),
+		buildPodcastUrl(podcastId, DEFAULT_COUNTRY_CODE),
+	]);
+
+	// Add the base URL if provided
+	if (baseUrl) {
+		uniqueUrlAlternatives.add(baseUrl);
+		uniqueUrlAlternatives.add(removeQueryParams(baseUrl));
+	}
+
+	// Add all supported regionalized URLs
+	COUNTRY_CODES.forEach(countryCode => {
+		uniqueUrlAlternatives.add(buildPodcastUrlWithIdPrefix(podcastId, countryCode));
+		uniqueUrlAlternatives.add(buildPodcastUrl(podcastId, countryCode));
+	});
+
+	return Array.from(uniqueUrlAlternatives);
+}
+
 /**
  * Generates a video or audio source descriptor based on the provided episode data.
  * 
@@ -1274,7 +1328,7 @@ function getVideoSource(episodeData) {
 	}
 	
 	const duration = episodeData.attributes.durationInMilliseconds 
-		? parseInt(episodeData.attributes.durationInMilliseconds / 1000)
+		? parseInt(episodeData.attributes.durationInMilliseconds / MS_PER_SECOND)
 		: 0;
 
 	const sourceDef = {
@@ -1291,7 +1345,7 @@ function getVideoSource(episodeData) {
 	};
 		
 	switch(episodeData.attributes.mediaKind) {
-		case "audio":
+		case MEDIA_KIND_AUDIO:
 			return new UnMuxVideoSourceDescriptor([], [
 				new AudioUrlSource({
 					name: "audio/mp3",
@@ -1300,7 +1354,7 @@ function getVideoSource(episodeData) {
 					...sourceDef
 				})
 			]);
-		case "video":
+		case MEDIA_KIND_VIDEO:
 			return new VideoSourceDescriptor([
 				new VideoUrlSource({
 					name: "video/mp4",
@@ -1450,10 +1504,10 @@ function podcastToPlatformVideo(x, author, isPlaylistParent = false) {
 	// Only mark as subscriber-only if there's no asset URL (unplayable) and subscription offers exist
 	// Episodes without duration but with asset URL are regular episodes with missing metadata
 	if (!x.attributes.assetUrl) {
-		isSubscriberOnly = (x?.attributes?.offers ?? []).some(e => e.kind == 'subscribe');
+		isSubscriberOnly = (x?.attributes?.offers ?? []).some(e => e.kind == OFFER_KIND_SUBSCRIBE);
 	}
 
-	let duration = durationInMilliseconds ? durationInMilliseconds / 1000 : 0;
+	let duration = durationInMilliseconds ? durationInMilliseconds / MS_PER_SECOND : 0;
 
 	if (!author) {
 		const podcastUrl = buildPodcastUrl(podcast.id);
@@ -1467,7 +1521,7 @@ function podcastToPlatformVideo(x, author, isPlaylistParent = false) {
 
 	const id = new PlatformID(PLATFORM, x.id + "", config?.id);
 	const name = x.attributes.itunesTitle ?? x.attributes.name ?? '';
-	const uploadDate = parseInt(new Date(x.attributes.releaseDateTime).getTime() / 1000);
+	const uploadDate = parseInt(new Date(x.attributes.releaseDateTime).getTime() / MS_PER_SECOND);
 
 	if (isSubscriberOnly) {
 
@@ -1669,7 +1723,7 @@ function itunesEpisodeToPlatformVideo(episode, author) {
 		const episodeUrl = episode.trackViewUrl || fallbackUrl;
 
 		// Filter out explicit content if needed
-		if (episode.contentAdvisoryRating === 'Explicit' && !_settings.allowExplicit) {
+		if (episode.contentAdvisoryRating === CONTENT_RATING_EXPLICIT && !_settings.allowExplicit) {
 			return null;
 		}
 
@@ -1685,8 +1739,8 @@ function itunesEpisodeToPlatformVideo(episode, author) {
 			};
 
 			// Determine media kind from file extension
-			const episodeContentType = episode.episodeContentType || 'audio';
-			const mediaKind = episodeContentType === 'video' ? 'video' : 'audio';
+			const episodeContentType = episode.episodeContentType || MEDIA_KIND_AUDIO;
+			const mediaKind = episodeContentType === MEDIA_KIND_VIDEO ? MEDIA_KIND_VIDEO : MEDIA_KIND_AUDIO;
 
 			// Create a compatible episodeData structure for getVideoSource
 			const episodeData = {
@@ -1774,7 +1828,7 @@ class PublisherChannelPlaylistsPager extends PlaylistPager {
                 if (itunesResp && itunesResp.results && itunesResp.results.length > 0) {
                     // First result is the channel/podcast itself
                     const channelInfo = itunesResp.results[0];
-bridge.toast('using fallback.')
+					bridge.toast(TOAST_MSG_FALLBACK_GENERIC)
                     // Create a single playlist for this podcast
                     const playlist = new PlatformPlaylist({
                         id: new PlatformID(PLATFORM, channelId, config.id),
@@ -1928,7 +1982,7 @@ function fetchPublisherChannelEpisodesPage(channelId, offset=0) {
                 // First result is the podcast/channel itself, rest are episodes (max 200)
                 const channelInfo = itunesResp.results[0];
                 const episodes = itunesResp.results.slice(1);
-bridge.toast('using fallback.')
+				bridge.toast(TOAST_MSG_FALLBACK_GENERIC)
                 // Create author from channel info
                 const author = new PlatformAuthorLink(
                     new PlatformID(PLATFORM, channelId, config.id),

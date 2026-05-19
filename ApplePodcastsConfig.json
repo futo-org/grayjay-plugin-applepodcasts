@@ -7,7 +7,7 @@
     "repositoryUrl": "https://gitlab.futo.org/videostreaming/plugins/apple-podcasts",
     "sourceUrl": "https://plugins.grayjay.app/ApplePodcasts/ApplePodcastsConfig.json",
     "scriptUrl": "./ApplePodcastsScript.js",
-    "version": 16,
+    "version": 17,
     "iconUrl": "./ApplePodcastsIcon.png",
     "id": "89ae4889-0420-4d16-ad6c-19c776b28f99",
     "subscriptionRateLimit": 10,
@@ -20,7 +20,8 @@
     "allowUrls": [
         "itunes.apple.com",
         "podcasts.apple.com",
-        "amp-api.podcasts.apple.com"
+        "amp-api.podcasts.apple.com",
+        "rss.marketingtools.apple.com"
     ],
     "settings": [
         {
@@ -235,6 +236,12 @@
         "userAgent": "Mozilla/5.0 (iPad; CPU OS 14_7_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.2 Mobile/15E148 Safari/604.1"
     },
     "changelog": {
+        "17": [
+            "Fix: Use http impersonation to request media files;",
+            "Improvement: Add iTunes API fallbacks for episode listings and episode details;",
+            "Improvement: Add iTunes API fallbacks for regular podcast channel details;",
+            "Improvement: Add best-effort iTunes API fallbacks for publisher channel playlists and episodes;"
+        ],
         "16": [
             "Fix: Episodes pagination issue;",
             "Fix: Subscriber-only detection incorrectly checked duration instead of assetUrl;"

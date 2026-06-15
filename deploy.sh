@@ -6,7 +6,7 @@ PRE_RELEASE=${PRE_RELEASE:-false}  # Default to false if not set
 
 # Determine deployment directory
 if [ "$PRE_RELEASE" = "true" ]; then
-    RELATIVE_PATH="pre-release/ApplePodcasts"
+    RELATIVE_PATH="unstable/ApplePodcasts"
 else
     RELATIVE_PATH="ApplePodcasts"
 fi

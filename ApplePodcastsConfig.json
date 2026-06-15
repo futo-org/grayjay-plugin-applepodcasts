@@ -3,7 +3,7 @@
     "platformUrl": "https://podcasts.apple.com/",
     "description": "One of the biggest podcast indexes owned by Apple",
     "author": "FUTO",
-    "authorUrl": "https://futo.org",
+    "authorUrl": "https://futo.tech",
     "repositoryUrl": "https://gitlab.futo.org/videostreaming/plugins/apple-podcasts",
     "sourceUrl": "https://plugins.grayjay.app/ApplePodcasts/ApplePodcastsConfig.json",
     "scriptUrl": "./ApplePodcastsScript.js",

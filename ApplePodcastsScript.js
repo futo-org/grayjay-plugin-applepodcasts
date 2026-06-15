@@ -44,7 +44,11 @@ const REGEX_CHANNEL_SERVER_DATA = /<script\s+(?:[^>]*?\s+)?(?:id=["']serialized-
 const REGEX_EPISODE_ID = /[?&]i=([^&]+)/;
 const REGEX_IMAGE = /<meta property="og:image" content="(.*?)">/s
 const REGEX_MAIN_SCRIPT_FILENAME = /index[~-]\w+\.js/;
-const REGEX_JWT = /\beyJhbGci[A-Za-z0-9-_]+?\.[A-Za-z0-9-_]+?\.[A-Za-z0-9-_]{43,}\b/;
+// Match a JWT regardless of header field ordering. Apple's MusicKit token header was
+// {"alg":...} (encodes to eyJhbGci...) but is now {"typ":"JWT","alg":...} (eyJ0eXAi...),
+// so anchor on the generic "eyJ" prefix and rely on the 3-part structure plus the long
+// signature segment ({43,}) to avoid false matches.
+const REGEX_JWT = /\beyJ[A-Za-z0-9-_]+?\.[A-Za-z0-9-_]+?\.[A-Za-z0-9-_]{43,}\b/;
 const REGEX_PUBLISHER_CHANNEL_URL = /https:\/\/podcasts\.apple\.com\/([a-z]{2})\/channel\/(?:([^\/]+)\/)?(?:id)?([0-9]+)/si;
 
 const SAVED_EPISODES_KEY  = 'applepodcasts:playlist:savedepisodes';

@@ -1543,30 +1543,7 @@ function podcastToPlatformVideo(x, author, isPlaylistParent = false) {
 		});
 	}
 
-	// If we have the asset URL (audio/video file), return PlatformVideoDetails for immediate playback
-	if (x.attributes.assetUrl) {
-		// Enrich description with podcast information
-		const description = enrichDescriptionWithPodcastInfo(
-			x.attributes.description?.standard || '',
-			podcast?.id
-		);
-
-		return new PlatformVideoDetails({
-			id,
-			name,
-			thumbnails: new Thumbnails([new Thumbnail(getArtworkUrl(x.attributes.artwork.url), 0)]),
-			author,
-			uploadDate,
-			duration: duration,
-			viewCount: -1,
-			url: x.attributes.url,
-			isLive: false,
-			description: description,
-			video: getVideoSource(x)
-		});
-	}
-
-	// No asset URL - return PlatformVideo (will require getContentDetails)
+	// Details are left to getContentDetails: its description needs the podcast HTML page (~1 s, ~1 MB each)
 	return new PlatformVideo({
 		id,
 		name,

@@ -77,6 +77,8 @@ const DEFAULT_COUNTRY_CODE = 'us';
 // Content ratings
 const CONTENT_RATING_EXPLICIT = 'Explicit';
 const CONTENT_RATING_EXPLICIT_LOWER = 'explicit';
+// The v2 marketing tools feed misspells the rating
+const CONTENT_RATING_EXPLICIT_V2 = 'Explict';
 
 // Media kinds
 const MEDIA_KIND_AUDIO = 'audio';
@@ -1498,6 +1500,10 @@ function loadOptionsForSetting(settingKey) {
 
 
 function podcastToPlatformVideo(x, author, isPlaylistParent = false) {
+	if (x.attributes.contentRating === CONTENT_RATING_EXPLICIT_LOWER && !_settings.allowExplicit) {
+		return null;
+	}
+
 	const podcast = x.relationships?.podcast?.data?.find(p => p.type == 'podcasts');
 	const podcastAttributes = podcast?.attributes;
 
@@ -1649,6 +1655,12 @@ function v2EpisodeToPlatformVideo(episode) {
 	// Convert v2 API episode object to PlatformVideo
 	try {
 		if (!episode.id || episode.kind !== 'podcast-episodes') {
+			return null;
+		}
+
+		const isExplicit = episode.contentAdvisoryRating === CONTENT_RATING_EXPLICIT_V2
+			|| episode.contentAdvisoryRating === CONTENT_RATING_EXPLICIT;
+		if (isExplicit && !_settings.allowExplicit) {
 			return null;
 		}
 
